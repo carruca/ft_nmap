@@ -115,6 +115,44 @@ getpts(char *origexpr)
 	return ;
 }
 */
+
+void
+packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *bytes)
+{
+	(void)args;
+	(void)bytes;
+	struct tm *ltime;
+	char timestr[11];
+	time_t local_tv_sec;
+
+	local_tv_sec = header->ts.tv_sec;
+	ltime = localtime(&local_tv_sec);
+	if (ltime == NULL)
+	{
+		perror("localtime");
+		return ;
+	}
+
+	if (strftime(timestr, sizeof(timestr), "%H:%M:%S", ltime) == 0)
+		return ;
+
+	printf("%s,%.6ld len:%d\n", timestr, header->ts.tv_usec, header->len);
+}
+
+int
+recv_packet(pcap_t *p)
+{
+	struct pcap_pkthdr *pkt_header;
+	const u_char *pkt_data;
+
+	if (pcap_next_ex(p, &pkt_header, &pkt_data) == PCAP_ERROR)
+	{
+		fprintf(stderr, "Couldn't read next packet: %s\n", pcap_geterr(p));
+		return 1;
+	}
+	return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -129,7 +167,7 @@ main(int argc, char **argv)
 		{argp_options, parse_opt, args_doc, doc, NULL, NULL, NULL};
 
 	pcap_if_t *alldevs;
-	pcap_if_t *d;
+	pcap_if_t *dev;
 	size_t dcount;
 	size_t num;
 	char errbuf[PCAP_ERRBUF_SIZE];
@@ -148,11 +186,11 @@ main(int argc, char **argv)
 	}
 
 	dcount = 0;
-	for (d = alldevs; d != NULL; d = d->next)
+	for (dev = alldevs; dev != NULL; dev = dev->next)
 	{
-		printf("%lu. %s", ++dcount, d->name);
-		if (d->description != NULL)
-			printf(" (%s)\n", d->description);
+		printf("%lu. %s", ++dcount, dev->name);
+		if (dev->description != NULL)
+			printf(" (%s)\n", dev->description);
 		else
 			printf(" (No description available)\n");
 	}
@@ -160,18 +198,21 @@ main(int argc, char **argv)
 	printf("Enter the interface number (1-%lu) range.\n", dcount);
 	scanf("%lu", &num);
 
-	for (d = alldevs, dcount = 0; dcount < num - 1; d = d->next, ++dcount);
-	printf("%s interface selected.\n", d->name);
+	for (dev = alldevs, dcount = 0; dcount < num - 1; dev = dev->next, ++dcount);
+	printf("%s interface selected.\n", dev->name);
 
-	handle = pcap_open_live(d->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
+	handle = pcap_open_live(dev->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
 	if (handle == NULL)
 	{
-		fprintf(stderr, "Couldn't open device %s: %s\n", d->name, errbuf);
+		fprintf(stderr, "Couldn't open device %s: %s\n", dev->name, errbuf);
 		exit(EXIT_FAILURE);
 	}
 
-	pcap_close(handle);
 	pcap_freealldevs(alldevs);
+
+	pcap_loop(handle, 0, packet_handler, NULL);
+
+	pcap_close(handle);
 	return 0;
 }
 
