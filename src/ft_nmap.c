@@ -117,39 +117,52 @@ getpts(char *origexpr)
 */
 
 void
-packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *bytes)
+print_packet_data(const u_char *pkt_data)
 {
-	(void)args;
-	(void)bytes;
+	(void)pkt_data;
+}
+
+int
+print_pkthdr(struct pcap_pkthdr *pkt_header)
+{
 	struct tm *ltime;
 	char timestr[11];
 	time_t local_tv_sec;
 
-	local_tv_sec = header->ts.tv_sec;
+	local_tv_sec = pkt_header->ts.tv_sec;
 	ltime = localtime(&local_tv_sec);
 	if (ltime == NULL)
 	{
 		perror("localtime");
-		return ;
+		return 1;
 	}
 
 	if (strftime(timestr, sizeof(timestr), "%H:%M:%S", ltime) == 0)
-		return ;
+		return 1;
 
-	printf("%s,%.6ld len:%d\n", timestr, header->ts.tv_usec, header->len);
+	printf("%s cap:%d len:%d\n",
+		timestr,
+		pkt_header->caplen,
+		pkt_header->len);
+	return 0;
 }
 
 int
-recv_packet(pcap_t *p)
+recv_packet(pcap_t *p_handle)
 {
 	struct pcap_pkthdr *pkt_header;
 	const u_char *pkt_data;
 
-	if (pcap_next_ex(p, &pkt_header, &pkt_data) == PCAP_ERROR)
+	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
+	if (pcap_next_ex(p_handle, &pkt_header, &pkt_data) == PCAP_ERROR)
 	{
-		fprintf(stderr, "Couldn't read next packet: %s\n", pcap_geterr(p));
+		fprintf(stderr, "Couldn't read next packet: %s\n",
+			pcap_geterr(p_handle));
 		return 1;
 	}
+
+	if (print_pkthdr(pkt_header))
+		return 1;
 	return 0;
 }
 
@@ -169,9 +182,9 @@ main(int argc, char **argv)
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
 	size_t dcount;
-	size_t num;
+	size_t dnum;
 	char errbuf[PCAP_ERRBUF_SIZE];
-	pcap_t *handle;
+	pcap_t *pkt_handle;
 
 	if (argp_parse(&argp, argc, argv, 0, &index, NULL) != 0)
 		return 0;
@@ -196,23 +209,33 @@ main(int argc, char **argv)
 	}
 
 	printf("Enter the interface number (1-%lu) range.\n", dcount);
-	scanf("%lu", &num);
+	scanf("%lu", &dnum);
 
-	for (dev = alldevs, dcount = 0; dcount < num - 1; dev = dev->next, ++dcount);
-	printf("%s interface selected.\n", dev->name);
+	for (dev = alldevs, dcount = 0; dcount < dnum - 1; dev = dev->next, ++dcount);
+	printf("%s interface opening...\n", dev->name);
 
-	handle = pcap_open_live(dev->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
-	if (handle == NULL)
+	pkt_handle = pcap_open_live(dev->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
+	if (pkt_handle == NULL)
 	{
-		fprintf(stderr, "Couldn't open device %s: %s\n", dev->name, errbuf);
+		fprintf(stderr, "Couldn't open device %s: %s\n",
+			dev->name,
+			errbuf);
+		exit(EXIT_FAILURE);
+	}
+
+	if (pcap_datalink(pkt_handle) != DLT_EN10MB)
+	{
+		fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n",
+			dev->name);
 		exit(EXIT_FAILURE);
 	}
 
 	pcap_freealldevs(alldevs);
 
-	pcap_loop(handle, 0, packet_handler, NULL);
+	while (1)
+		recv_packet(pkt_handle);
 
-	pcap_close(handle);
+	pcap_close(pkt_handle);
 	return 0;
 }
 
