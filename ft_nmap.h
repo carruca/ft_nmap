@@ -22,6 +22,22 @@
 # include <signal.h>
 # include <stdlib.h>
 
+# define MAXSCANS   6
+
+# define SCAN_SYN   0x0001
+# define SCAN_NULL  0x0002
+# define SCAN_FIN   0x0004
+# define SCAN_XMAS  0x0008
+# define SCAN_ACK   0x0010
+# define SCAN_UDP   0x0020
+# define SCAN_ALL   0x003F
+
+struct scan_mode
+{
+  const char *name;
+  short flag;
+};
+
 enum e_port_state
 {
   PORT_UNKNOWN,
@@ -34,34 +50,23 @@ enum e_port_state
 
 typedef enum e_port_state t_port_state;
 
-enum e_scan_type
-{
-  SCAN_ALL = 0,
-  SCAN_SYN,
-  SCAN_NULL,
-  SCAN_ACK,
-  SCAN_FIN,
-  SCAN_XMAS,
-  SCAN_UDP
-};
-
-typedef enum e_scan_type t_scan_type;
-
-struct s_port_scan
-{
-  t_scan_type type;
-  t_port_state state;
-};
-
-typedef struct s_port_scan t_port_scan;
-
 struct s_port
 {
-  unsigned short portno;
-  unsigned char proto;
-  unsigned char *owner;
+  unsigned short port_number;
+  unsigned char port_protocol;
+  unsigned char *port_owner;
+  struct s_port *next;
 };
 
 typedef struct s_port t_port;
+
+struct s_scan_config
+{
+  struct in_addr target_addr;
+  unsigned int number_of_ports;
+  short scan_type;
+};
+
+typedef struct s_scan_config t_scan_config;
 
 #endif

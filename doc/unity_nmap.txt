@@ -1,0 +1,88 @@
+nmap
+
+argument
+  --ip IP_ADDRESS/HOSTNAME
+  --file FILE
+options
+  --help menu
+  --ports NUMBER/RANGED
+  --speedup NUMBER
+  --scan TYPE
+
+configurations
+  scan_type
+  ports
+  threads
+  address/hostname
+
+  packet
+  
+scans functions
+  SYN
+  NULL
+  ACK
+  FIN
+  XMAS
+  UDP
+
+enum port_state
+{
+}
+
+struct port
+{
+  int portnbr;
+  u_char *service;
+  struct scan *scan;
+  enum port_state state;
+}
+
+struct packet
+{
+  struct eth_header eth_header;
+  struct packet *next;
+}
+
+results
+  scan time
+  result ports
+    port number
+    service name
+    scan result
+    conclusion
+
+  struct config
+  {
+    char *address;
+    size_t port_count;
+    size_t scan_count;
+  }
+
+  struct scan_mode
+  {
+    int scan_type;
+    char *scan_name;
+    (void)(*funtion)();
+  }
+
+  struct scan_result
+  {
+    scan_type type;
+    port_state conclusion;
+  }
+
+  struct port_result
+  {
+    int portno;
+    char *service_name;
+    struct scan_result *scan_result;
+    port_state conclusion;
+  }
+
+  struct results
+  {
+    struct timeval scan_time;
+    struct result_port *result_port;
+  }
+
+
