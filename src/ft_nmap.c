@@ -2,6 +2,7 @@
 #include <pcap.h>
 #include <time.h>
 #include <netinet/if_ether.h>
+#include <getopt.h>
 
 
 #define MAXIPHDRLEN		20
@@ -9,10 +10,13 @@
 #define PROMISC_FALSE 0
 #define TIMESTRLEN 		100
 #define MAXPORTS 			1024
+#define MINPORTS 			1
 
 int number_of_packets = 0;
 int number_of_ports = 0;
 int number_of_threads = 0;
+short scan_mode = 0;
+int debugging = 1;
 
 void
 print_host(const u_char *host, char *origin)
@@ -122,7 +126,7 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 	else printf("Not IP Adrress\n");
 	printf("\n");
 }
-
+/*
 static error_t
 parse_opt(int key, char *arg,
 	struct argp_state *state)
@@ -133,20 +137,64 @@ parse_opt(int key, char *arg,
 		case ARGP_KEY_NO_ARGS:
 			argp_error(state, "missing host operand");
 
-		/* fallthrough */
 		default:
 			return ARGP_ERR_UNKNOWN;
 	}
 	return 0;
 }
-/*
-unsigned short *
-getpts(char *origexpr)
-{
-	(void)origexpr;
-	return ;
-}
 */
+
+unsigned short *
+getpts(char *expr, int *number_of_ports)
+{
+	unsigned short *ports;
+	int count, start, end;
+	char *next, *dash;
+
+	ports = malloc(MAXPORTS * sizeof(unsigned short));
+	if (ports == NULL)
+	{
+		fprintf(stderr, "getpts: malloc failed\n");
+		exit(EXIT_FAILURE);
+	}
+
+	count = 0;
+	next = expr;
+	while (next != NULL)
+	{
+		next = strchr(expr, ',');
+		if (next)
+			*next = '\0';
+		if (*expr == '-')
+		{
+			start = 1;
+			end = atoi(expr + 1);
+		}
+		else
+		{
+			start = atoi(expr);
+			end = start;
+			dash = strchr(expr, '-');
+			if (dash && *(dash + 1))
+				end = atoi(dash + 1);
+			else if (dash && !*(dash + 1))
+				end = MAXPORTS;
+		}
+
+		if (start < MINPORTS || start > end || end > MAXPORTS)
+		{
+			fprintf(stderr, "Your port range is invalid.\n");
+			exit(EXIT_FAILURE);
+		}
+
+		for (int i = start; i <= end; ++i)
+			ports[count++] = i;
+		expr = next + 1;
+	}
+	*number_of_ports = count;
+	return ports;
+}
+
 
 void
 print_packet_data(const u_char *pkt_data)
@@ -239,6 +287,11 @@ encode_syn()
 	return 0;
 }
 
+struct nmap_data
+{
+	struct sockaddr_in target_addr;
+};
+
 static const struct scan_mode scan_modes[] = {
 	{"SYN", SCAN_SYN},
 	{"NULL", SCAN_NULL},
@@ -249,35 +302,86 @@ static const struct scan_mode scan_modes[] = {
 };
 
 void
-print_scan_config(int ports, char *target_addr, short scan_mode, int threads)
+nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int threads)
 {
 	printf("Scan configurations\n");
-	printf("Target IP-Address : %s\n", target_addr);
+	printf("Target IP-Address : %s\n",
+		inet_ntoa(nmap->target_addr.sin_addr));
 	printf("No of ports to scan : %d\n", ports);
 	printf("Scans to be performed :");
-	for (int i= 0; i < MAXSCANS; ++i)
+	for (int i = 0; i < MAXSCANS; ++i)
 	{
-		if (scan_mode & scan_modes[i].flag)
+		if (scan_modes[i].flag & scan_mode)
 			printf(" %s", scan_modes[i].name);
 	}
 	printf("\n");
 	printf("No of threads : %d\n", threads);
-
 }
+
+int
+nmap_set_target(struct nmap_data *nmap, const char *hostname)
+{
+	int rc;
+	struct addrinfo hints, *res;
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_INET;
+
+	rc = getaddrinfo(hostname, NULL, &hints, &res);
+	if (rc != 0)
+		return 1;
+	memcpy(&nmap->target_addr, res->ai_addr, res->ai_addrlen);
+	freeaddrinfo(res);
+	return 0;
+}
+
+void
+nmap_run(struct nmap_data *nmap, const char *hostname)
+{
+	nmap_set_target(nmap, hostname);
+	nmap_print_scan_config(nmap, number_of_ports, scan_mode, number_of_threads);
+}
+
+struct nmap_data *
+nmap_init()
+{
+	struct nmap_data *nmap;
+
+	nmap = malloc(sizeof(struct nmap_data));
+	if (nmap == NULL)
+		return NULL;
+	memset(nmap, 0, sizeof(*nmap));
+	return nmap;
+}
+
+void
+printusage(char *name)
+{
+	printf("%s [options] [hostname ...]\n"
+    "--help        Print this help screen\n"
+		"--ports       Ports to scan (ex: '-p 1-10' or '-p 1,2,3' or '-p 1,5-15')\n"
+    "--ip          IP addresses to scan in dot format\n"
+    "--file        File name containing IP addresses to scan\n"
+    "--speedup     [max 250] number of parallel threads to use\n"
+    "--scan        Scan type: SYN/NULL/FIN/XMAS/ACK/UDP\n",
+    name);
+}
+
+extern char *optarg;
+extern int optind;
 
 int
 main(int argc, char **argv)
 {
-	int index;
-	char args_doc[] = "[OPTIONS]";
-	char doc[] = "Network exploration tool and security / port scanner";
-	struct argp_option argp_options[] = {
-		//		{"first-hop", 'f', "NUM", 0, "set initial hop distance, i.e., time-to-live", 0},
-		{0}
+	struct option long_options[] =
+	{
+		{"help", no_argument, 0, 'h'},
+		{"ports", required_argument, 0, 'p'},
+		{"ip", required_argument, 0, 'i'},
+		{"file", required_argument, 0, 'f'},
+		{"speedup", required_argument, 0, 's'},
+		{"scan", required_argument, 0, 'S'}
 	};
-	struct argp argp =
-		{argp_options, parse_opt, args_doc, doc, NULL, NULL, NULL};
-
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
 	size_t number_of_devices;
@@ -286,20 +390,43 @@ main(int argc, char **argv)
 	pcap_t *pcap_handle;
 	u_char *pkt_buf;
 	size_t pkt_size;
-	short scan_mode = 0;
+	struct nmap_data *nmap;
+	unsigned short *ports;
+	int opt;
+	char *program_name;
 
-	if (argp_parse(&argp, argc, argv, 0, &index, NULL) != 0)
-		return 0;
-	
-	argv += index;
-	argc += index;
+	program_name = strchr(argv[0], '/') + 1;
+
+	if (argc < 2)
+	{
+		printusage(program_name);
+		exit(EXIT_FAILURE);
+	}
+
+	while ((opt = getopt_long(argc, argv, "hp:", long_options, NULL)) != -1)
+	{
+		switch (opt)
+		{
+			case 'p':
+				ports = getpts(optarg, &number_of_ports);
+				break;
+			case 'h':
+			default:
+				printusage(program_name);
+				exit(EXIT_FAILURE);
+		}
+	}
+
+	(void)ports;
+	argv += optind;
+	argc -= optind;
 
 	if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR)
 	{
 		fprintf(stderr, "Couldn't find any devide: %s\n", errbuf);
 		exit(EXIT_FAILURE);
 	}
-
+/*
 	number_of_devices = 0;
 	for (dev = alldevs; dev != NULL; dev = dev->next)
 	{
@@ -316,7 +443,8 @@ main(int argc, char **argv)
 		fprintf(stderr, "Interface number out of range.\n");
 		exit(EXIT_FAILURE);
 	}
-	
+*/
+	num = 1;
 	for (dev = alldevs, number_of_devices = 0; number_of_devices < num - 1; dev = dev->next, ++number_of_devices);
 	printf("%s interface opening...\n", dev->name);
 
@@ -338,13 +466,17 @@ main(int argc, char **argv)
 
 	pcap_freealldevs(alldevs);
 
+	nmap = nmap_init();
+
 	if (!number_of_ports)
 		number_of_ports = MAXPORTS;
 
 	if (!scan_mode)
-		scan_mode = SCAN_SYN;
+		scan_mode = SCAN_ALL;
 
-	print_scan_config(number_of_ports, *argv, scan_mode, number_of_threads);
+	while (argc--)
+		nmap_run(nmap, *argv++);
+
 
 //	if ()
 	pkt_size = 100;
@@ -355,7 +487,6 @@ main(int argc, char **argv)
 	int bytes_inject;
 
 	encode_syn();
-
 
 	bytes_inject = pcap_inject(pcap_handle, pkt_buf, pkt_size);
 	if (bytes_inject < 0)
@@ -371,93 +502,4 @@ main(int argc, char **argv)
 
 	pcap_close(pcap_handle);
 	return 0;
-}
-
-int
-old_main()
-{	
-	pcap_t *handle;										/* Session handle */
-	pcap_if_t *devs_list;
-	char errbuf[PCAP_ERRBUF_SIZE];
-//	struct bpf_program fp; 						/* The compiled filter expression */
-//	char filter_exp[] = "port 80"; 		/* Filter expression */
-
-	struct in_addr addr;
-	bpf_u_int32 mask;
-	bpf_u_int32 net;
-//	struct pcap_pkthdr header;
-//	const u_char *packet;
-//	int num_packets = 10;
-//	const struct ether_header *ethernet;
-
-	if (pcap_findalldevs(&devs_list, errbuf) == PCAP_ERROR)
-	{
-		fprintf(stderr, "Couldn't find any devide: %s\n", errbuf);
-		exit(EXIT_FAILURE);
-	}
-
-	for (pcap_if_t *devp = devs_list; devp != NULL; devp = devp->next)
-	{
-		printf("Device:	%s\n", devp->name);
-		if (devp->description != NULL)
-			printf("Description:	%s\n", devp->description);
-/*		for (struct pcap_addr *addrp = devp->addresses; addrp != NULL; addrp = addrp->next)
-		{
-			if (addrp->addr != NULL)
-			{
-				if (addrp->addr->sa_family == AF_INET)
-				{
-					printf("Address ipv4: %s\n", inet_ntoa(((struct sockaddr_in *)addrp->addr)->sin_addr));
-				}
-			}
-		}
-*/
-		if (pcap_lookupnet(devp->name, &net, &mask, errbuf) == PCAP_ERROR)
-		{
-			fprintf(stderr, "Couldn't get netmask for device %s: %s\n", devp->name, errbuf);
-			net = 0;
-			mask = 0;
-		}
-
-		addr.s_addr = net;
-		printf("Net:	%s\n", inet_ntoa(addr));
-
-		addr.s_addr = mask;
-		printf("Mask:	%s\n", inet_ntoa(addr));
-		
-
-		handle = pcap_open_live(devp->name, BUFSIZ, PROMISC_TRUE, -1, errbuf);
-		if (handle == NULL)
-		{
-			fprintf(stderr, "Couldn't open device %s: %s\n", devp->name, errbuf);
-			exit(EXIT_FAILURE);
-		}
-
-		if (pcap_datalink(handle) != DLT_EN10MB)
-		{
-			fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n", devp->name);
-			exit(EXIT_FAILURE);
-		}
-/*
-		if (pcap_compile(handle, &fp, filter_exp, 0, net) == PCAP_ERROR)
-		{
-			fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
-			exit(EXIT_FAILURE);
-		}
-
-		if (pcap_setfilter(handle, &fp) == PCAP_ERROR)
-		{
-			fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
-			exit(EXIT_FAILURE);
-		}
-*/
-//		pcap_loop(handle, num_packets, print_packet_info, NULL);
-
-//		pcap_freecode(&fp);
-		pcap_close(handle);
-		printf("\n");
-	}
-
-	pcap_freealldevs(devs_list);
-  return 0;
 }
