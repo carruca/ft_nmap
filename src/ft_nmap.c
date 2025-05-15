@@ -3,20 +3,35 @@
 #include <time.h>
 #include <netinet/if_ether.h>
 #include <getopt.h>
+#include <errno.h>
+#include <limits.h>
 
 
-#define MAXIPHDRLEN		20
-#define PROMISC_TRUE	1 
-#define PROMISC_FALSE 0
-#define TIMESTRLEN 		100
-#define MAXPORTS 			1024
-#define MINPORTS 			1
+#define MAXIPHDRLEN					20
+#define PROMISC_TRUE				1
+#define PROMISC_FALSE 			0
+#define TIMESTRLEN 					100
+#define MAXPORTS 						1024
+#define MINPORTS 						1
+#define MAXTHREADS 					250
+#define DEFAULT_PORT_RANGE 	"1-1024"
+
+#define NMAP_IP_OPTARG 			0x01
+#define NMAP_FILE_OPTARG 		0x02
+#define NMAP_PORTS_OPTARG 	0x04
 
 int number_of_packets = 0;
-int number_of_ports = 0;
-int number_of_threads = 0;
-short scan_mode = 0;
+unsigned int number_of_ports = 0;
+unsigned short number_of_threads = 0;
+short scan_type = 0;
 int debugging = 1;
+extern char *optarg;
+extern int optind;
+extern int errno;
+char *program_name = NULL;
+unsigned short *ports = NULL;
+char *source = NULL;
+char *filename = NULL;
 
 void
 print_host(const u_char *host, char *origin)
@@ -126,37 +141,25 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 	else printf("Not IP Adrress\n");
 	printf("\n");
 }
-/*
-static error_t
-parse_opt(int key, char *arg,
-	struct argp_state *state)
-{
-	(void)arg;
-	switch(key)
-	{
-		case ARGP_KEY_NO_ARGS:
-			argp_error(state, "missing host operand");
 
-		default:
-			return ARGP_ERR_UNKNOWN;
-	}
-	return 0;
+void
+nmap_print_error_and_exit(char *error)
+{
+	fprintf(stderr, "%s: %s\n", program_name, error);
+	exit(EXIT_FAILURE);
 }
-*/
 
 unsigned short *
-getpts(char *expr, int *number_of_ports)
+nmap_get_ports(char *expr, unsigned int *number_of_ports)
 {
 	unsigned short *ports;
 	int count, start, end;
 	char *next, *dash;
+	char check_port[MAXPORTS + 1] = {0};
 
 	ports = malloc(MAXPORTS * sizeof(unsigned short));
 	if (ports == NULL)
-	{
-		fprintf(stderr, "getpts: malloc failed\n");
-		exit(EXIT_FAILURE);
-	}
+		nmap_print_error_and_exit("get_ports: malloc failed.");
 
 	count = 0;
 	next = expr;
@@ -182,19 +185,21 @@ getpts(char *expr, int *number_of_ports)
 		}
 
 		if (start < MINPORTS || start > end || end > MAXPORTS)
-		{
-			fprintf(stderr, "Your port range is invalid.\n");
-			exit(EXIT_FAILURE);
-		}
+			nmap_print_error_and_exit("port range is invalid.");
 
 		for (int i = start; i <= end; ++i)
-			ports[count++] = i;
+		{
+			if (check_port[i] == 0)
+			{
+				ports[count++] = i;
+				check_port[i] = 1;
+			}
+		}
 		expr = next + 1;
 	}
 	*number_of_ports = count;
 	return ports;
 }
-
 
 void
 print_packet_data(const u_char *pkt_data)
@@ -339,7 +344,7 @@ void
 nmap_run(struct nmap_data *nmap, const char *hostname)
 {
 	nmap_set_target(nmap, hostname);
-	nmap_print_scan_config(nmap, number_of_ports, scan_mode, number_of_threads);
+	nmap_print_scan_config(nmap, number_of_ports, scan_type, number_of_threads);
 }
 
 struct nmap_data *
@@ -355,9 +360,9 @@ nmap_init()
 }
 
 void
-printusage(char *name)
+print_usage_and_exit(char *name)
 {
-	printf("%s [options] [hostname ...]\n"
+	printf("%s [OPTIONS]\n"
     "--help        Print this help screen\n"
 		"--ports       Ports to scan (ex: '-p 1-10' or '-p 1,2,3' or '-p 1,5-15')\n"
     "--ip          IP addresses to scan in dot format\n"
@@ -365,14 +370,52 @@ printusage(char *name)
     "--speedup     [max 250] number of parallel threads to use\n"
     "--scan        Scan type: SYN/NULL/FIN/XMAS/ACK/UDP\n",
     name);
+	exit(EXIT_FAILURE);
 }
 
-extern char *optarg;
-extern int optind;
+void
+nmap_ip_file_parse(const char *filename)
+{
+	FILE *stream;
+	char nextline[HOST_NAME_MAX];
+
+/*
+ * TODO: stores ip address/hostname somewhere
+ */
+	stream = fopen(filename, "r");
+	if (stream == NULL)
+		nmap_print_error_and_exit("fopen: not able to open the file.");
+
+	while (fgets(nextline, sizeof(nextline), stream))
+	fclose(stream);
+}
+
+char *
+get_program_name(char *arg)
+{
+	char *pos;
+
+	pos = strchr(arg, '/');
+	if (pos == NULL)
+		return arg;
+	return pos + 1;
+}
+
+short
+nmap_get_scan_type_by_name(char *expr)
+{
+	for (int i = 0; i < MAXSCANS; ++i)
+	{
+		if (strcmp(scan_modes[i].name, expr) == 0)
+			return scan_modes[i].flag;
+	}
+	return 0;
+}
 
 int
-main(int argc, char **argv)
+nmap_arg_parse(int argc, char **argv, int *arg_index)
 {
+	int opt;
 	struct option long_options[] =
 	{
 		{"help", no_argument, 0, 'h'},
@@ -380,8 +423,61 @@ main(int argc, char **argv)
 		{"ip", required_argument, 0, 'i'},
 		{"file", required_argument, 0, 'f'},
 		{"speedup", required_argument, 0, 's'},
-		{"scan", required_argument, 0, 'S'}
+		{"scan", required_argument, 0, 'S'},
+		{0}
 	};
+
+	program_name = get_program_name(argv[0]);
+
+	if (argc < 2)
+		print_usage_and_exit(program_name);
+
+	while ((opt = getopt_long(argc, argv, "hp:i:f:", long_options, NULL)) != -1)
+	{
+		switch (opt)
+		{
+			case 'p':
+				if (ports)
+					nmap_print_error_and_exit("only one --ports option allowed, separate multiples ranges with commas.");
+				ports = nmap_get_ports(optarg, &number_of_ports);
+				break;
+			case 'i':
+				if (source)
+					nmap_print_error_and_exit("you can only use --ip option once.");
+				source = optarg;
+				break;
+			case 'f':
+				filename = optarg;
+				break;
+			case 's':
+				number_of_threads = atoi(optarg);
+				if (number_of_threads > MAXTHREADS)
+					nmap_print_error_and_exit("speedup exceeded.");
+				break;
+			case 'S':
+				scan_type = nmap_get_scan_type_by_name(optarg);
+				if (scan_type == 0)
+					nmap_print_error_and_exit("scan type is invalid.");
+				break;
+			case 'h':
+			default:
+				print_usage_and_exit(program_name);
+		}
+	}
+
+	if (filename && source)
+		nmap_print_error_and_exit("--ip and --file options cannot be used at the same time.");
+
+	if (filename)
+		nmap_ip_file_parse(filename);
+
+	*arg_index = optind;
+	return 0;
+}
+
+int
+main(int argc, char **argv)
+{
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
 	size_t number_of_devices;
@@ -391,35 +487,10 @@ main(int argc, char **argv)
 	u_char *pkt_buf;
 	size_t pkt_size;
 	struct nmap_data *nmap;
-	unsigned short *ports;
-	int opt;
-	char *program_name;
+	int arg_index;
 
-	program_name = strchr(argv[0], '/') + 1;
-
-	if (argc < 2)
-	{
-		printusage(program_name);
-		exit(EXIT_FAILURE);
-	}
-
-	while ((opt = getopt_long(argc, argv, "hp:", long_options, NULL)) != -1)
-	{
-		switch (opt)
-		{
-			case 'p':
-				ports = getpts(optarg, &number_of_ports);
-				break;
-			case 'h':
-			default:
-				printusage(program_name);
-				exit(EXIT_FAILURE);
-		}
-	}
-
-	(void)ports;
-	argv += optind;
-	argc -= optind;
+	if (nmap_arg_parse(argc, argv, &arg_index))
+		nmap_print_error_and_exit("arg_parse failed.");
 
 	if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR)
 	{
@@ -467,18 +538,23 @@ main(int argc, char **argv)
 	pcap_freealldevs(alldevs);
 
 	nmap = nmap_init();
+	if (nmap == NULL)
+		nmap_print_error_and_exit("initialisation failed.");
 
 	if (!number_of_ports)
-		number_of_ports = MAXPORTS;
+		ports = nmap_get_ports(DEFAULT_PORT_RANGE, &number_of_ports);
 
-	if (!scan_mode)
-		scan_mode = SCAN_ALL;
+	if (!scan_type)
+		scan_type = SCAN_ALL;
 
-	while (argc--)
-		nmap_run(nmap, *argv++);
+	nmap_run(nmap, source);
+
+	free(nmap);
+	free(ports);
+	pcap_close(pcap_handle);
+	return 0;
 
 
-//	if ()
 	pkt_size = 100;
 	pkt_buf = NULL;
 	pkt_buf = set_buffer(pkt_buf, pkt_size);
@@ -496,9 +572,7 @@ main(int argc, char **argv)
 	}
 
 	while (1)	
-	{
 		recv_packet(pcap_handle);
-	}
 
 	pcap_close(pcap_handle);
 	return 0;
