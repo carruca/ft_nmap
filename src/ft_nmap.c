@@ -1,303 +1,95 @@
-#include "ft_nmap.h"
+#include "ft_nmap.h" // Assuming this will be provided or created later
 #include <pcap.h>
 #include <time.h>
-#include <netinet/if_ether.h>
+#include <netinet/if_ether.h> // For ETH_P_IP, ETH_ALEN, struct ethhdr
+#include <netinet/ip.h>       // For struct ip
+#include <netinet/tcp.h>      // For struct tcphdr, TH_SYN, TH_ACK, TH_RST
 #include <getopt.h>
 #include <errno.h>
 #include <limits.h>
+#include <string.h>      // For memset, memcpy, strncpy
+#include <arpa/inet.h>   // For inet_addr, htons, ntohs, inet_ntoa, inet_ntop
+#include <stdlib.h>      // For rand, srand, malloc, free, atoi, exit
+#include <stdio.h>       // For printf, fprintf, stderr, FILE, fopen, fclose, fgets
+#include <netdb.h>       // For getaddrinfo, gai_strerror, struct addrinfo
+
+// Define constants if not in ft_nmap.h
+#ifndef MAXSCANS
+#define MAXSCANS 6 // Number of scan types in scan_modes array
+#endif
+#ifndef SCAN_SYN
+#define SCAN_SYN 0x01
+#endif
+#ifndef SCAN_NULL
+#define SCAN_NULL 0x02
+#endif
+#ifndef SCAN_FIN
+#define SCAN_FIN 0x04
+#endif
+#ifndef SCAN_XMAS
+#define SCAN_XMAS 0x08
+#endif
+#ifndef SCAN_ACK
+#define SCAN_ACK 0x10
+#endif
+#ifndef SCAN_UDP
+#define SCAN_UDP 0x20
+#endif
+#ifndef SCAN_ALL
+#define SCAN_ALL (SCAN_SYN | SCAN_NULL | SCAN_FIN | SCAN_XMAS | SCAN_ACK | SCAN_UDP)
+#endif
 
 
-#define MAXIPHDRLEN					20
-#define PROMISC_TRUE				1
-#define PROMISC_FALSE 			0
-#define TIMESTRLEN 					100
-#define MAXPORTS 						1024
-#define MINPORTS 						1
-#define MAXTHREADS 					250
-#define DEFAULT_PORT_RANGE 	"1-1024"
+#define MAXIPHDRLEN	60 // Max IP header length (including options)
+#define PROMISC_TRUE	1
+#define PROMISC_FALSE 	0
+#define TIMESTRLEN 	100
+#define MAXPORTS 	1024 // Max number of ports to scan from range
+#define MINPORTS 	1    // Min port number
+#define MAXTHREADS 	250  // Max number of threads (placeholder for future use)
+#define DEFAULT_PORT_RANGE "1-1024"
+#define PACKET_BUF_SIZE	1024 // Buffer for crafting packets
+#define DEFAULT_SRC_IP "127.0.0.1" // Placeholder: should be dynamically determined
+#define DEFAULT_SRC_PORT 12345     // Source port for sending packets
+#define RECV_TIMEOUT_SECONDS 5     // Timeout for the packet reception phase
 
-#define NMAP_IP_OPTARG 			0x01
-#define NMAP_FILE_OPTARG 		0x02
-#define NMAP_PORTS_OPTARG 	0x04
+#define NMAP_IP_OPTARG 	0x01
+#define NMAP_FILE_OPTARG 	0x02
+#define NMAP_PORTS_OPTARG 0x04
 
-#define ETH0 								1
+#define ETH0 	1 // Default network interface for pcap (placeholder)
 
-int number_of_packets = 0;
+// Global variables (consider encapsulating these in a struct if complexity grows)
 unsigned int number_of_ports = 0;
-unsigned short number_of_threads = 0;
+unsigned short number_of_threads = 0; // Currently unused but parsed
 short scan_type = 0;
-int debugging = 1;
+int debugging = 1; // Controls debug output verbosity
 extern char *optarg;
 extern int optind;
-extern int errno;
+// extern int errno; // errno is defined in errno.h
 char *program_name = NULL;
-unsigned short *ports = NULL;
-char *source = NULL;
-char *filename = NULL;
+unsigned short *ports = NULL; // Array of port numbers to scan
+char *source = NULL;          // Target hostname or IP string from --ip
+char *filename = NULL;        // Filename for --file option
 
-void
-print_host(const u_char *host, char *origin)
-{
-	printf("%s MAC Address: %s\n", origin, ether_ntoa((struct ether_addr *)host));
-}
+// Data structures for results
+typedef enum {
+	PORT_OPEN,
+	PORT_CLOSED,
+	PORT_FILTERED,
+	PORT_UNSCANNED
+} port_state_t;
 
-uint16_t
-handle_ethernet(const u_char *bytes)
-{
-	const struct ether_header *ether;
-	uint16_t type;
+struct nmap_port_result {
+	int port_number;
+	port_state_t state;
+	char service_name[64];
+};
 
-	ether = (struct ether_header *)bytes;
-	type = ntohs(ether->ether_type);
-
-	if (type == ETHERTYPE_IP)
-	{
-		printf("Ethernet type hex:0x%x dec:%d is a IP packet\n",
-				type,
-				type);
-	}
-	else if (type == ETHERTYPE_ARP)
-	{
-		printf("Ethernet type hex:0x%x dec:%d is a ARP packet\n",
-				type,
-				type);
-	}
-	else if (type == ETHERTYPE_REVARP)
-	{
-		printf("Ethernet type hex:0x%x dec:%d is a REVARP packet\n",
-				type,
-				type);
-	}
-	else
-	{
-		printf("Ethernet type hex:0x%x dec:%d not IP\n",
-				type,
-				type);
-	}
-
-	print_host(ether->ether_dhost, "Destination");
-	print_host(ether->ether_shost, "Source");
-	return type;
-}
-
-void
-print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
-{
-	uint16_t ether_type;
-	struct ip *ip;
-	unsigned int ip_hlen;
-	struct icmp *icmp;
-	struct tcphdr *tcphdr;
-
-	++number_of_packets;
-	printf("Grabbed packet of lenght: %d\n", header->len);
-	printf("Total number of packets: %d\n", number_of_packets);
-	printf("Recieved at .... %s", ctime((const time_t*)&header->ts.tv_sec));
-	printf("Ethernet address lenght is %d\n", ETH_HLEN);
-
-	ether_type = handle_ethernet(bytes);
-	if (ether_type == ETHERTYPE_IP)
-	{
-		bytes += ETH_HLEN;
-		ip = (struct ip *)bytes;
-		
-		printf("Time To Live: %d\n", ip->ip_ttl);
-		printf("IP src: %s\n", inet_ntoa(ip->ip_src));
-		printf("IP dst: %s\n", inet_ntoa(ip->ip_dst));
-
-		ip_hlen = ip->ip_hl << 2;
-		bytes += ip_hlen;
-		switch(ip->ip_p)
-		{
-			case IPPROTO_ICMP:
-				icmp = (struct icmp *)bytes;
-				printf("Protocol: ICMP\n");
-				printf("Type:%d Code:%d Seq:%d\n",
-					icmp->icmp_type, icmp->icmp_code, ntohs(icmp->icmp_seq));
-				break;
-
-			case IPPROTO_TCP:
-				tcphdr = (struct tcphdr *)bytes;
-				printf("Protocol: TCP\n");
-				printf("Ports: %d -> %d\n",
-					ntohs(tcphdr->th_sport),
-					ntohs(tcphdr->th_dport));
-				printf("Flags:%s%s%s%s%s Seq:0x%x Ack:0x%x\n",
-					(tcphdr->th_flags & TH_URG ? "URG" : "*"),
-					(tcphdr->th_flags & TH_ACK ? "ACK" : "*"),
-					(tcphdr->th_flags & TH_PUSH ? "PUSH" : "*"),
-					(tcphdr->th_flags & TH_RST ? "RST" : "*"),
-					(tcphdr->th_flags & TH_SYN ? "SYN" : "*"),
-					ntohs(tcphdr->th_seq), ntohs(tcphdr->th_ack));
-				break;
-
-			case IPPROTO_UDP:
-				printf("Protocol: UDP\n");
-				break;
-
-			default:
-				printf("Protocol: Unknown\n");
-				break;
-		}
-	}
-	else printf("Not IP Adrress\n");
-	printf("\n");
-}
-
-void
-nmap_print_error_and_exit(char *error)
-{
-	fprintf(stderr, "%s: %s\n", program_name, error);
-	exit(EXIT_FAILURE);
-}
-
-unsigned short *
-nmap_get_ports(char *expr, unsigned int *number_of_ports)
-{
-	unsigned short *ports;
-	int count, start, end;
-	char *next, *dash;
-	char checks[MAXPORTS + 1];
-
-	ports = malloc(MAXPORTS * sizeof(unsigned short));
-	if (ports == NULL)
-		nmap_print_error_and_exit("get_ports: malloc failed.");
-
-	memset(checks, 0, MAXPORTS + 1);
-	count = 0;
-	next = expr;
-	while (next != NULL)
-	{
-		next = strchr(expr, ',');
-		if (next)
-			*next = '\0';
-		if (*expr == '-')
-		{
-			start = 1;
-			end = atoi(expr + 1);
-		}
-		else
-		{
-			start = atoi(expr);
-			end = start;
-			dash = strchr(expr, '-');
-			if (dash && *(dash + 1))
-				end = atoi(dash + 1);
-			else if (dash && !*(dash + 1))
-				end = MAXPORTS;
-		}
-
-		if (start < MINPORTS || start > end || end > MAXPORTS)
-			nmap_print_error_and_exit("port range is invalid.");
-
-		for (int i = start; i <= end; ++i)
-		{
-			if (checks[i] == 0)
-			{
-				ports[count++] = i;
-				checks[i] = 1;
-			}
-		}
-		expr = next + 1;
-	}
-	*number_of_ports = count;
-	return ports;
-}
-
-void
-print_packet_data(const u_char *pkt_data)
-{
-	(void)pkt_data;
-
-}
-
-int
-print_pkt_header(struct pcap_pkthdr *pkt_header)
-{
-	struct tm *ltime;
-	char timestr[TIMESTRLEN];
-	time_t local_tv_sec;
-
-	local_tv_sec = pkt_header->ts.tv_sec;
-	ltime = localtime(&local_tv_sec);
-	if (ltime == NULL)
-	{
-		perror("localtime");
-		return 1;
-	}
-
-	if (strftime(timestr, sizeof(timestr), "%H:%M:%S", ltime) == 0)
-		return 1;
-
-	printf("%s cnt:%d cap:%d len:%d\n",
-		timestr,
-		number_of_packets,
-		pkt_header->caplen,
-		pkt_header->len);
-	++number_of_packets;
-	return 0;
-}
-
-void
-print_ip_header(struct ip *ip)
-{
-	(void)ip;
-	return ;
-}
-
-void
-print_pkt_data(const u_char *pkt_data)
-{
-	print_ip_header((struct ip *)pkt_data + ETH_HLEN);
-	return ;
-}
-
-int
-recv_packet(pcap_t *handle)
-{
-	struct pcap_pkthdr *pkt_header;
-//	struct pcap_pkthdr *cpy_pkt_header;
-	const u_char *pkt_data;
-//	const u_char *cpy_pkt_data;
-	
-
-	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
-	if (pcap_next_ex(handle, &pkt_header, &pkt_data) == PCAP_ERROR)
-	{
-		fprintf(stderr, "Couldn't read next packet: %s\n",
-			pcap_geterr(handle));
-		return 1;
-	}
-
-	print_packet_info(pkt_header, pkt_data);
-	/*
-	if (print_pkt_header(pkt_header))
-		return 1;
-	print_pkt_data(pkt_data);
-	*/
-	return 0;
-}
-
-// scan(sock, )
-
-u_char *
-set_buffer(u_char *buffer, size_t size)
-{
-
-	if (buffer == NULL)
-		buffer = malloc(size);
-	return buffer;
-}
-
-int
-encode_syn()
-{
-	return 0;
-}
-
-struct nmap_data
-{
-	struct sockaddr_in target_addr;
+// Structure for scan mode lookup
+struct scan_mode {
+	const char *name;
+	short flag;
 };
 
 static const struct scan_mode scan_modes[] = {
@@ -309,299 +101,593 @@ static const struct scan_mode scan_modes[] = {
 	{"UDP", SCAN_UDP}
 };
 
-void
-nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int threads)
-{
-	printf("Scan configurations\n");
-	printf("Target IP-Address : %s\n",
-		inet_ntoa(nmap->target_addr.sin_addr));
-	printf("No of ports to scan : %d\n", ports);
-	printf("Scans to be performed :");
-	for (int i = 0; i < MAXSCANS; ++i)
-	{
-		if (scan_modes[i].flag & scan_mode)
-			printf(" %s", scan_modes[i].name);
+// Forward declarations
+static size_t craft_syn_packet(struct nmap_data *nmap, uint16_t dest_port, u_char *packet_buffer, size_t buffer_size);
+static void analyze_response_packet(const struct pcap_pkthdr *header, const u_char *bytes, struct nmap_data *nmap, struct nmap_port_result *results, unsigned int num_total_ports);
+static const char* state_to_string(port_state_t state);
+void nmap_print_error_and_exit(char *error); // Make it static if only used in this file
+
+// Main nmap data structure
+struct nmap_data {
+	struct sockaddr_in target_addr; // Target's address information
+	// Potentially add source_addr here if dynamically determined
+};
+
+
+void nmap_print_error_and_exit(char *error) {
+	fprintf(stderr, "%s: Error: %s\n", program_name ? program_name : "ft_nmap", error);
+	if (errno) {
+		perror("System error");
 	}
-	printf("\n");
-	printf("No of threads : %d\n", threads);
+	exit(EXIT_FAILURE);
 }
 
-int
-nmap_set_target(struct nmap_data *nmap, const char *hostname)
-{
-	int s;
-	struct addrinfo hints, *res;
+unsigned short *nmap_get_ports(char *expr, unsigned int *num_ports_parsed) {
+	unsigned short *parsed_ports_array;
+	int count = 0, start, end;
+	char *next_token, *dash_pos;
+	char port_status_flags[MAXPORTS + 1]; // To check for duplicates
 
-	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_INET;
+	parsed_ports_array = malloc(MAXPORTS * sizeof(unsigned short));
+	if (parsed_ports_array == NULL)
+		nmap_print_error_and_exit("get_ports: malloc failed.");
 
-	s = getaddrinfo(hostname, NULL, &hints, &res);
-	if (s != 0)
-	{
-		fprintf(stderr, "ft_nmap: failed to resolve \"%s\": %s\n", hostname, gai_strerror(s));
-		return 1;
+	memset(port_status_flags, 0, sizeof(port_status_flags));
+	
+	char *current_expr_ptr = expr;
+	while ((next_token = strsep(&current_expr_ptr, ",")) != NULL) {
+		if (*next_token == '\0') continue; // Skip empty tokens if any
+
+		dash_pos = strchr(next_token, '-');
+		if (dash_pos) { // Range like "X-Y", "X-", "-Y"
+			*dash_pos = '\0'; // Split token
+			if (*next_token == '\0') { // Format "-Y"
+				start = MINPORTS;
+			} else {
+				start = atoi(next_token);
+			}
+			if (*(dash_pos + 1) == '\0') { // Format "X-"
+				end = MAXPORTS;
+			} else {
+				end = atoi(dash_pos + 1);
+			}
+		} else { // Single port "X"
+			start = atoi(next_token);
+			end = start;
+		}
+
+		if (start < MINPORTS || start > MAXPORTS || end < MINPORTS || end > MAXPORTS || start > end) {
+			fprintf(stderr, "Invalid port or range: %s%c%s. Ports must be between %d and %d.\n",
+				(*next_token == '\0' && dash_pos) ? "" : next_token,
+				dash_pos ? '-' : ' ',
+				(dash_pos && *(dash_pos+1)=='\0') ? "" : (dash_pos ? dash_pos+1 : ""),
+				MINPORTS, MAXPORTS);
+			free(parsed_ports_array);
+			nmap_print_error_and_exit("Invalid port specification.");
+		}
+
+		for (int i = start; i <= end; ++i) {
+			if (count < MAXPORTS && port_status_flags[i] == 0) {
+				parsed_ports_array[count++] = i;
+				port_status_flags[i] = 1;
+			} else if (count >= MAXPORTS) {
+                 fprintf(stderr, "Warning: Exceeded maximum number of unique ports (%d). Some ports may not be scanned.\n", MAXPORTS);
+                 goto end_parsing; // Break outer loop
+            }
+		}
 	}
-	memcpy(&nmap->target_addr, res->ai_addr, res->ai_addrlen);
-	freeaddrinfo(res);
-	return 0;
+
+end_parsing:
+	*num_ports_parsed = count;
+	if (count == 0) {
+		free(parsed_ports_array);
+		nmap_print_error_and_exit("No valid ports specified.");
+	}
+	return parsed_ports_array;
 }
 
-void
-nmap_run(struct nmap_data *nmap, const char *hostname)
-{
-	if (nmap_set_target(nmap, hostname))
-		exit(EXIT_FAILURE);
-	nmap_print_scan_config(nmap, number_of_ports, scan_type, number_of_threads);
 
-	// TODO: run
-	// xmit
-	// 	bucle de puertos
-	// 	bucle de tipos de escaneo
-	// recv
-	// 	pcap_next_ex
-	// 	analizar mensaje recibido y guardar estadisticas
-	// print
-	// 	estadisticas
+static const char* state_to_string(port_state_t state) {
+	switch (state) {
+		case PORT_OPEN: return "Open";
+		case PORT_CLOSED: return "Closed";
+		case PORT_FILTERED: return "Filtered";
+		case PORT_UNSCANNED: return "Unscanned";
+		default: return "Unknown";
+	}
 }
 
-struct nmap_data *
-nmap_init()
-{
-	struct nmap_data *nmap;
+static uint16_t tcp_checksum(const void *buff, size_t len, struct in_addr src_addr, struct in_addr dest_addr) {
+    const uint16_t *buf = buff;
+    uint32_t sum = 0;
 
-	nmap = malloc(sizeof(struct nmap_data));
-	if (nmap == NULL)
-		return NULL;
+    // Pseudo header
+    sum += (src_addr.s_addr >> 16) & 0xFFFF;
+    sum += (src_addr.s_addr) & 0xFFFF;
+    sum += (dest_addr.s_addr >> 16) & 0xFFFF;
+    sum += (dest_addr.s_addr) & 0xFFFF;
+    sum += htons(IPPROTO_TCP);
+    sum += htons(len);
+
+    while (len > 1) {
+        sum += *buf++;
+        len -= 2;
+    }
+    if (len > 0) { // If there's an odd byte left
+        sum += *(uint8_t *)buf;
+    }
+
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    return (uint16_t)(~sum);
+}
+
+static size_t craft_syn_packet(struct nmap_data *nmap, uint16_t dest_port, u_char *packet_buffer, size_t buffer_size) {
+	struct ethhdr *eth = (struct ethhdr *)packet_buffer;
+	struct ip *iph = (struct ip *)(packet_buffer + sizeof(struct ethhdr)); // Use struct ip
+	struct tcphdr *tcph = (struct tcphdr *)(packet_buffer + sizeof(struct ethhdr) + sizeof(struct ip));
+	struct sockaddr_in src_sock_addr;
+	size_t packet_total_size = sizeof(struct ethhdr) + sizeof(struct ip) + sizeof(struct tcphdr);
+
+	if (buffer_size < packet_total_size) {
+		fprintf(stderr, "craft_syn_packet: Buffer too small (%zu B) for packet size (%zu B)\n", buffer_size, packet_total_size);
+		return 0;
+	}
+	memset(packet_buffer, 0, packet_total_size); // Zero out headers
+
+	// Ethernet Header (dummy MACs, replace with actual interface MACs if possible)
+	memset(eth->h_source, 0xAA, ETH_ALEN); // Source MAC
+	memset(eth->h_dest, 0xBB, ETH_ALEN);   // Dest MAC (TODO: ARP lookup for target MAC on local nets)
+	eth->h_proto = htons(ETH_P_IP);
+
+	// IP Header
+	src_sock_addr.sin_addr.s_addr = inet_addr(DEFAULT_SRC_IP); // TODO: Get this from the actual interface
+
+	iph->ip_hl = 5; // Header Length (5 words * 4 bytes = 20 bytes)
+	iph->ip_v = 4;  // Version IPv4
+	iph->ip_tos = 0; // Type of Service
+	iph->ip_len = htons(sizeof(struct ip) + sizeof(struct tcphdr)); // Total Length of IP packet
+	iph->ip_id = htons(rand() % 65535); // Identification (random)
+	iph->ip_off = 0; // Fragment Offset
+	iph->ip_ttl = 64; // Time To Live
+	iph->ip_p = IPPROTO_TCP; // Protocol (TCP)
+	iph->ip_sum = 0; // Checksum (kernel will fill it if 0, or calculate manually)
+	iph->ip_src = src_sock_addr.sin_addr;
+	iph->ip_dst = nmap->target_addr.sin_addr;
+	// TODO: Optionally calculate IP checksum here if not relying on kernel/offloading
+
+	// TCP Header
+	tcph->th_sport = htons(DEFAULT_SRC_PORT); // Source Port
+	tcph->th_dport = htons(dest_port);        // Destination Port
+	tcph->th_seq = htonl(rand());             // Sequence Number (random)
+	tcph->th_ack = 0;                         // Acknowledgement Number (0 for SYN)
+	tcph->th_off = 5;                         // Data Offset (5 words * 4 bytes = 20 bytes)
+	tcph->th_flags = TH_SYN;                  // Flags (SYN)
+	tcph->th_win = htons(5840);               // Window Size
+	tcph->th_sum = 0;                         // Checksum (calculated below)
+	tcph->th_urp = 0;                         // Urgent Pointer
+
+	tcph->th_sum = tcp_checksum(tcph, sizeof(struct tcphdr), iph->ip_src, iph->ip_dst);
+
+	return packet_total_size;
+}
+
+static void analyze_response_packet(const struct pcap_pkthdr *header, const u_char *bytes, struct nmap_data *nmap, struct nmap_port_result *results, unsigned int num_total_ports) {
+	const struct ethhdr *ethernet_header;
+	const struct ip *ip_header;
+	const struct tcphdr *tcp_header;
+	unsigned int ip_header_len_bytes;
+
+	if (header->caplen < sizeof(struct ethhdr)) {
+		if (debugging > 1) fprintf(stderr, "Debug: Packet too short for Ethernet header (caplen: %u B, required: %zu B)\n", header->caplen, sizeof(struct ethhdr));
+		return;
+	}
+	ethernet_header = (struct ethhdr *)bytes;
+
+	if (ntohs(ethernet_header->h_proto) != ETH_P_IP) return;
+
+	if (header->caplen < (sizeof(struct ethhdr) + sizeof(struct ip))) {
+		if (debugging > 1) fprintf(stderr, "Debug: Packet too short for minimal IP header (caplen: %u B, required: %zu B)\n", header->caplen, sizeof(struct ethhdr) + sizeof(struct ip));
+		return;
+	}
+	ip_header = (struct ip *)(bytes + sizeof(struct ethhdr));
+	
+	ip_header_len_bytes = ip_header->ip_hl * 4;
+	if (ip_header_len_bytes < sizeof(struct ip)) {
+		if (debugging) fprintf(stderr, "Debug: Invalid IP header length: %u bytes (ip_hl: %u words). Min expected: %zu bytes. (caplen: %u B)\n", ip_header_len_bytes, ip_header->ip_hl, sizeof(struct ip), header->caplen);
+		return;
+	}
+	if (header->caplen < (sizeof(struct ethhdr) + ip_header_len_bytes)) {
+		if (debugging) fprintf(stderr, "Debug: Packet too short for declared IP header length (caplen: %u B, required eth+ip_hl: %zu B)\n", header->caplen, sizeof(struct ethhdr) + ip_header_len_bytes);
+		return;
+	}
+
+	if (ip_header->ip_src.s_addr != nmap->target_addr.sin_addr.s_addr ||
+		ip_header->ip_dst.s_addr != inet_addr(DEFAULT_SRC_IP)) {
+		return;
+	}
+
+	if (ip_header->ip_p != IPPROTO_TCP) return;
+
+	if (header->caplen < (sizeof(struct ethhdr) + ip_header_len_bytes + sizeof(struct tcphdr))) {
+		if (debugging) fprintf(stderr, "Debug: Packet too short for minimal TCP header (caplen: %u B, required eth+ip+tcp_min: %zu B)\n", header->caplen, sizeof(struct ethhdr) + ip_header_len_bytes + sizeof(struct tcphdr));
+		return;
+	}
+	tcp_header = (struct tcphdr *)(bytes + sizeof(struct ethhdr) + ip_header_len_bytes);
+	
+	uint16_t responsive_port = ntohs(tcp_header->th_sport);
+	uint16_t our_source_port = ntohs(tcp_header->th_dport);
+
+	if (our_source_port != DEFAULT_SRC_PORT) {
+		if (debugging > 1) printf("Debug: Packet received for unexpected destination port: %u (expected %d)\n", our_source_port, DEFAULT_SRC_PORT);
+		return;
+	}
+
+	for (unsigned int i = 0; i < num_total_ports; ++i) {
+		if (results[i].port_number == responsive_port) {
+			if ((tcp_header->th_flags & TH_SYN) && (tcp_header->th_flags & TH_ACK)) {
+				results[i].state = PORT_OPEN;
+			} else if (tcp_header->th_flags & TH_RST) {
+				if (results[i].state != PORT_OPEN) { // Avoid overriding OPEN if a late RST arrives
+					results[i].state = PORT_CLOSED;
+				}
+			}
+			if (debugging) {
+				char current_ip_str[INET_ADDRSTRLEN];
+				inet_ntop(AF_INET, &(ip_header->ip_src), current_ip_str, INET_ADDRSTRLEN);
+				printf("Debug: Response for port %s:%u -> State: %s (Flags: S%d A%d R%d F%d P%d U%d)\n", 
+					current_ip_str, responsive_port, state_to_string(results[i].state),
+					(tcp_header->th_flags & TH_SYN)?1:0, (tcp_header->th_flags & TH_ACK)?1:0,
+					(tcp_header->th_flags & TH_RST)?1:0, (tcp_header->th_flags & TH_FIN)?1:0,
+					(tcp_header->th_flags & TH_PUSH)?1:0, (tcp_header->th_flags & TH_URG)?1:0);
+			}
+			return; 
+		}
+	}
+	if (debugging > 1) {
+		char current_ip_str[INET_ADDRSTRLEN];
+		inet_ntop(AF_INET, &(ip_header->ip_src), current_ip_str, INET_ADDRSTRLEN);
+		printf("Debug: Response from %s for port %u, but not in our scanned list or wrong dest port %u.\n", current_ip_str, responsive_port, our_source_port);
+	}
+}
+
+void nmap_run(struct nmap_data *nmap, const char *hostname, pcap_t *pcap_handle) {
+	time_t scan_overall_start_time, scan_overall_end_time;
+	struct nmap_port_result *results = NULL;
+
+	scan_overall_start_time = time(NULL);
+	srand(time(NULL)); // Seed for rand() used in packet crafting
+
+	if (nmap_set_target(nmap, hostname)) // nmap_set_target already calls exit on failure
+        return; // Should not be reached if nmap_set_target fails
+	
+    nmap_print_scan_config(nmap, number_of_ports, scan_type, number_of_threads);
+
+	results = malloc(number_of_ports * sizeof(struct nmap_port_result));
+	if (results == NULL) {
+		nmap_print_error_and_exit("nmap_run: malloc for results failed.");
+	}
+	for (unsigned int i = 0; i < number_of_ports; ++i) {
+		results[i].port_number = ports[i];
+		results[i].state = PORT_UNSCANNED;
+		strncpy(results[i].service_name, "", sizeof(results[i].service_name) -1);
+        results[i].service_name[sizeof(results[i].service_name)-1] = '\0';
+	}
+
+	if (debugging) printf("Starting XMIT phase...\n");
+	for (unsigned int i = 0; i < number_of_ports; ++i) {
+		uint16_t current_port = results[i].port_number; // Use port from results struct
+		if (scan_type & SCAN_SYN) { // Assuming only SYN scan for now
+			u_char packet_buffer[PACKET_BUF_SIZE];
+			size_t packet_size = craft_syn_packet(nmap, current_port, packet_buffer, sizeof(packet_buffer));
+			if (packet_size > 0) {
+				if (pcap_inject(pcap_handle, packet_buffer, packet_size) == -1) {
+					fprintf(stderr, "ERROR: pcap_inject failed for port %u on %s: %s. Continuing scan.\n", 
+						current_port, inet_ntoa(nmap->target_addr.sin_addr), pcap_geterr(pcap_handle));
+				} else if (debugging > 1) {
+					printf("SYN packet sent to %s:%u\n", inet_ntoa(nmap->target_addr.sin_addr), current_port);
+				}
+			}
+		}
+		// TODO: Implement other scan types here
+	}
+
+	if (debugging) printf("Waiting for responses (RECV phase for %d seconds)...\n", RECV_TIMEOUT_SECONDS);
+	time_t recv_phase_start_time = time(NULL);
+	struct pcap_pkthdr *pkt_header;
+	const u_char *pkt_data;
+	int pcap_ret;
+
+	while (1) {
+		if (time(NULL) - recv_phase_start_time > RECV_TIMEOUT_SECONDS) {
+			if (debugging) printf("Reception timeout reached.\n");
+			break;
+		}
+		pcap_ret = pcap_next_ex(pcap_handle, &pkt_header, &pkt_data);
+		if (pcap_ret == 1) {
+			analyze_response_packet(pkt_header, pkt_data, nmap, results, number_of_ports);
+		} else if (pcap_ret == 0) { // Timeout from pcap_next_ex (normal if pcap_open_live timeout is short)
+			if (debugging > 2) printf("Debug: pcap_next_ex timed out (no packet during internal pcap timeout)\n");
+			continue; 
+		} else if (pcap_ret == PCAP_ERROR_BREAK) { // pcap_breakloop called
+			if (debugging) printf("pcap_next_ex: PCAP_ERROR_BREAK received.\n");
+			break;
+		} else if (pcap_ret == PCAP_ERROR) {
+			fprintf(stderr, "pcap_next_ex error: %s. Ending reception phase.\n", pcap_geterr(pcap_handle));
+			break;
+		}
+	}
+	scan_overall_end_time = time(NULL);
+
+	printf("\nScan Results for %s (%s):\n", hostname ? hostname : inet_ntoa(nmap->target_addr.sin_addr), inet_ntoa(nmap->target_addr.sin_addr));
+	printf("--------------------------------------------------\n");
+	printf("%-10s %-10s %s\n", "Port", "State", "Service");
+	printf("--------------------------------------------------\n");
+
+	int open_count = 0, closed_count = 0, filtered_count = 0;
+	for (unsigned int i = 0; i < number_of_ports; ++i) {
+		if (results[i].state == PORT_UNSCANNED) {
+			results[i].state = PORT_FILTERED; // Unanswered SYN implies filtered
+		}
+		if (results[i].state == PORT_OPEN) {
+			if (results[i].port_number == 80) strncpy(results[i].service_name, "http", sizeof(results[i].service_name)-1);
+			else if (results[i].port_number == 443) strncpy(results[i].service_name, "https", sizeof(results[i].service_name)-1);
+			else if (results[i].port_number == 22) strncpy(results[i].service_name, "ssh", sizeof(results[i].service_name)-1);
+            else if (results[i].port_number == 21) strncpy(results[i].service_name, "ftp", sizeof(results[i].service_name)-1);
+			else if (results[i].port_number == 23) strncpy(results[i].service_name, "telnet", sizeof(results[i].service_name)-1);
+			else if (results[i].port_number == 25) strncpy(results[i].service_name, "smtp", sizeof(results[i].service_name)-1);
+			else if (results[i].port_number == 53) strncpy(results[i].service_name, "dns", sizeof(results[i].service_name)-1);
+            results[i].service_name[sizeof(results[i].service_name)-1] = '\0'; // Ensure null term
+		}
+		printf("%-10d %-10s %s\n", results[i].port_number, state_to_string(results[i].state), results[i].service_name);
+		if (results[i].state == PORT_OPEN) open_count++;
+		else if (results[i].state == PORT_CLOSED) closed_count++;
+		else if (results[i].state == PORT_FILTERED) filtered_count++;
+	}
+	printf("--------------------------------------------------\n");
+	double scan_duration = difftime(scan_overall_end_time, scan_overall_start_time);
+	printf("\nScan Summary:\n");
+	printf("Target: %s (%s)\n", hostname ? hostname : inet_ntoa(nmap->target_addr.sin_addr), inet_ntoa(nmap->target_addr.sin_addr));
+	printf("Total ports scanned: %u\n", number_of_ports);
+	printf("Open ports: %d\n", open_count);
+	printf("Closed ports: %d\n", closed_count);
+	printf("Filtered ports: %d\n", filtered_count);
+	printf("Scan completed in %.2f seconds.\n", scan_duration);
+
+	free(results);
+	results = NULL;
+}
+
+struct nmap_data *nmap_init() {
+	struct nmap_data *nmap = malloc(sizeof(struct nmap_data));
+	if (nmap == NULL) {
+        nmap_print_error_and_exit("nmap_init: malloc failed.");
+    }
 	memset(nmap, 0, sizeof(*nmap));
 	return nmap;
 }
 
-void
-print_usage_and_exit(char *name)
-{
-	printf("%s [OPTIONS]\n"
-    "--help        Print this help screen\n"
-		"--ports       Ports to scan (ex: '-p 1-10' or '-p 1,2,3' or '-p 1,5-15')\n"
-    "--ip          IP addresses to scan in dot format\n"
-    "--file        File name containing IP addresses to scan\n"
-    "--speedup     [max 250] number of parallel threads to use\n"
-    "--scan        Scan type: SYN/NULL/FIN/XMAS/ACK/UDP\n",
-    name);
+void print_usage_and_exit(char *name) {
+	printf("Usage: %s [OPTIONS] --ip <target_ip_or_hostname>\n"
+		"OPTIONS:\n"
+		"  --help        Print this help screen\n"
+		"  --ports <p>   Ports to scan (e.g., '1-1024', '80,443', '22,25,50-100')\n"
+		"  --ip <host>   Target IP address or hostname (required)\n"
+		"  --file <file> File name containing IP addresses/hostnames to scan (not yet implemented)\n"
+		"  --speedup <n> Number of parallel threads [1-250] (not yet implemented)\n"
+		"  --scan <type> Scan type(s) (e.g., 'SYN', 'NULL,FIN') (SYN is default)\n"
+        "  --debuglevel <lvl> Set debug output verbosity (0=none, 1=basic, 2=detailed, 3=pcap internal)\n",
+		name);
 	exit(EXIT_FAILURE);
 }
 
-void
-nmap_ip_file_parse(const char *filename)
-{
-	FILE *stream;
-	char nextline[HOST_NAME_MAX];
-
-/*
- * TODO: stores ip address/hostname somewhere
- */
-	stream = fopen(filename, "r");
-	if (stream == NULL)
-		nmap_print_error_and_exit("fopen: not able to open the file.");
-
-	while (fgets(nextline, sizeof(nextline), stream))
-	fclose(stream);
+void nmap_ip_file_parse(const char *fname) {
+    // TODO: Implement parsing IPs from a file
+    fprintf(stderr, "Warning: --file option is not yet implemented. Scanning %s instead if provided via --ip.\n", source ? source : "no target");
+    if (!source) { // If --file was the only source of targets
+        nmap_print_error_and_exit("--file processing not implemented and no --ip target given.");
+    }
 }
 
-char *
-get_program_name(char *arg)
-{
-	char *pos;
-
-	pos = strchr(arg, '/');
-	if (pos == NULL)
-		return arg;
-	return pos + 1;
+char *get_program_name(char *arg) {
+	char *pos = strrchr(arg, '/'); // Use strrchr to get last component
+	return pos ? pos + 1 : arg;
 }
 
-short
-nmap_get_scan_type_by_name(char *expr)
-{
-	for (int i = 0; i < MAXSCANS; ++i)
-	{
-		if (strcmp(scan_modes[i].name, expr) == 0)
-			return scan_modes[i].flag;
-	}
-	return 0;
+short nmap_get_scan_type_by_name(char *expr) {
+    short type_flags = 0;
+    char *token;
+    char *rest = expr;
+
+    while ((token = strsep(&rest, ",")) != NULL) {
+        if (*token == '\0') continue;
+        int found = 0;
+        for (int i = 0; i < MAXSCANS; ++i) {
+            if (strcasecmp(scan_modes[i].name, token) == 0) { // case-insensitive compare
+                type_flags |= scan_modes[i].flag;
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            fprintf(stderr, "Warning: Unknown scan type '%s'. Ignoring.\n", token);
+        }
+    }
+    return type_flags;
 }
 
-int
-nmap_arg_parse(int argc, char **argv, int *arg_index)
-{
+
+int nmap_arg_parse(int argc, char **argv) { // Removed arg_index, not used
 	int opt;
-	struct option long_options[] =
-	{
+	const struct option long_options[] = {
 		{"help", no_argument, 0, 'h'},
 		{"ports", required_argument, 0, 'p'},
 		{"ip", required_argument, 0, 'i'},
 		{"file", required_argument, 0, 'f'},
 		{"speedup", required_argument, 0, 's'},
 		{"scan", required_argument, 0, 'S'},
-		{0}
+        {"debuglevel", required_argument, 0, 'd'},
+		{0, 0, 0, 0}
 	};
+    int option_index = 0; // Required by getopt_long
 
 	program_name = get_program_name(argv[0]);
 
-	if (argc < 2)
-		print_usage_and_exit(program_name);
+	if (argc < 2) print_usage_and_exit(program_name);
 
-	while ((opt = getopt_long(argc, argv, "hp:i:f:", long_options, NULL)) != -1)
-	{
-		switch (opt)
-		{
+	while ((opt = getopt_long(argc, argv, "hp:i:f:s:S:d:", long_options, &option_index)) != -1) {
+		switch (opt) {
 			case 'p':
-				if (ports)
-					nmap_print_error_and_exit("only one --ports option allowed, separate multiples ranges with commas.");
+				if (ports) { // Prevent multiple --ports options
+                    free(ports); // Free previously allocated ports if any
+                    fprintf(stderr, "Warning: --ports option specified multiple times. Using last definition.\n");
+                }
 				ports = nmap_get_ports(optarg, &number_of_ports);
 				break;
 			case 'i':
-				if (source)
-					nmap_print_error_and_exit("you can only use --ip option once.");
-				source = optarg;
+				if (source) { // Prevent multiple --ip options
+                    // free(source); // optarg should not be freed by us here
+                    fprintf(stderr, "Warning: --ip option specified multiple times. Using last definition: %s.\n", optarg);
+                }
+				source = optarg; // This is a pointer to argv, do not free.
 				break;
 			case 'f':
-				filename = optarg;
+				if (filename) {
+                     fprintf(stderr, "Warning: --file option specified multiple times. Using last definition: %s.\n", optarg);
+                }
+                filename = optarg;
 				break;
 			case 's':
 				number_of_threads = atoi(optarg);
-				if (number_of_threads > MAXTHREADS)
-					nmap_print_error_and_exit("speedup exceeded.");
+				if (number_of_threads == 0 || number_of_threads > MAXTHREADS) {
+                    fprintf(stderr, "Invalid number for speedup: %s. Must be 1-%d.\n", optarg, MAXTHREADS);
+                    nmap_print_error_and_exit("Invalid speedup value.");
+                }
 				break;
 			case 'S':
-				scan_type = nmap_get_scan_type_by_name(optarg);
-				if (scan_type == 0)
-					nmap_print_error_and_exit("scan type is invalid.");
+                if (scan_type != 0) {
+                     fprintf(stderr, "Warning: --scan option specified multiple times or combined. Resulting scan_type: %d\n", scan_type);
+                }
+				scan_type |= nmap_get_scan_type_by_name(optarg);
 				break;
+            case 'd':
+                debugging = atoi(optarg);
+                if (debugging < 0 || debugging > 3) {
+                    fprintf(stderr, "Invalid debug level: %s. Must be 0-3.\n", optarg);
+                    debugging = 1; // Default to 1
+                }
+                break;
 			case 'h':
-			default:
+			default: /* '?' */
 				print_usage_and_exit(program_name);
 		}
 	}
 
-	if (filename && source)
-		nmap_print_error_and_exit("--ip and --file options cannot be used at the same time.");
+    // After loop, optind is the index in argv of the first argv-element that is not an option.
+    // We don't expect non-option arguments other than for --ip, --ports etc.
+    if (optind < argc) {
+        printf("Warning: Non-option ARGV-elements: ");
+        while (optind < argc)
+            printf("%s ", argv[optind++]);
+        printf("\nIgnoring non-option arguments.\n");
+    }
 
-	if (filename)
-		nmap_ip_file_parse(filename);
-
-	*arg_index = optind;
-	return 0;
-}
-
-pcap_t *
-nmap_get_pcap_handle()
-{
-	pcap_if_t *alldevs;
-	pcap_if_t *dev;
-	size_t number_of_devices;
-	size_t num;
-	char errbuf[PCAP_ERRBUF_SIZE];
-	pcap_t *pcap_handle;
-
-	if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR)
-	{
-		fprintf(stderr, "Couldn't find any devide: %s\n", errbuf);
-		exit(EXIT_FAILURE);
+	if (!source && !filename) {
+        nmap_print_error_and_exit("Target host must be specified with --ip or --file.");
+    }
+    if (filename && source) {
+		fprintf(stderr, "Warning: Both --ip and --file options used. --ip '%s' will be scanned. --file '%s' will be ignored.\n", source, filename);
+        // Or choose to scan both, or error out. Current behavior: --ip takes precedence if both.
+        // For now, let --ip take precedence. If --file is to be used, --ip should not be.
+        // To make it strict:
+        // nmap_print_error_and_exit("--ip and --file options cannot be used at the same time.");
 	}
-/*
-	number_of_devices = 0;
-	for (dev = alldevs; dev != NULL; dev = dev->next)
-	{
-		printf("%lu. %s", ++number_of_devices, dev->name);
-		if (dev->description != NULL)
-			printf(" (%s)\n", dev->description);
-		else
-			printf(" (No description available)\n");
-	}
+    if (filename && !source) { // Only --file is specified
+        nmap_ip_file_parse(filename); // This function needs to set 'source' or handle multiple targets
+    }
 
-	printf("Enter the interface number (1-%lu) range.\n", number_of_devices);
-	if (scanf("%lu", &num) == 0)
-	{
-		fprintf(stderr, "Interface number out of range.\n");
-		exit(EXIT_FAILURE);
-	}
-*/
-	num = ETH0;
-	for (dev = alldevs, number_of_devices = 0; number_of_devices < num - 1; dev = dev->next, ++number_of_devices);
-	printf("%s interface opening...\n", dev->name);
 
-	pcap_handle = pcap_open_live(dev->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
-	if (pcap_handle == NULL)
-	{
-		fprintf(stderr, "Couldn't open device %s: %s\n",
-			dev->name,
-			errbuf);
-		return NULL;
-	}
-
-	if (pcap_datalink(pcap_handle) != DLT_EN10MB)
-	{
-		fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n",
-			dev->name);
-		exit(EXIT_FAILURE);
-	}
-
-	pcap_freealldevs(alldevs);
-	return pcap_handle;
-}
-
-int
-main(int argc, char **argv)
-{
-	pcap_t *pcap_handle;
-	struct nmap_data *nmap;
-	int arg_index;
-
-	if (nmap_arg_parse(argc, argv, &arg_index))
-		nmap_print_error_and_exit("arg_parse failed.");
-
-	pcap_handle = nmap_get_pcap_handle();
-	if (pcap_handle == NULL)
-		nmap_print_error_and_exit("pcap_handle failed.");
-
-	nmap = nmap_init();
-	if (nmap == NULL)
-		nmap_print_error_and_exit("initialisation failed.");
-
-	if (!number_of_ports)
+	if (!number_of_ports) { // If --ports not given
 		ports = nmap_get_ports(DEFAULT_PORT_RANGE, &number_of_ports);
-
-	if (!scan_type)
-		scan_type = SCAN_ALL;
-
-	nmap_run(nmap, source);
-
-	free(nmap);
-	free(ports);
-	pcap_close(pcap_handle);
+	}
+	if (!scan_type) { // If --scan not given
+		scan_type = SCAN_SYN; // Default to SYN scan
+	}
 	return 0;
+}
 
-	u_char *pkt_buf;
-	size_t pkt_size;
+pcap_t *nmap_get_pcap_handle() {
+	pcap_if_t *alldevs, *dev_iter;
+	char errbuf[PCAP_ERRBUF_SIZE];
+	pcap_t *pcap_handle_local; // Renamed to avoid conflict if any global named pcap_handle
+    char *default_dev_name = NULL;
 
-	pkt_size = 100;
-	pkt_buf = NULL;
-	pkt_buf = set_buffer(pkt_buf, pkt_size);
+	if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR) {
+		fprintf(stderr, "Couldn't find any device: %s\n", errbuf);
+		exit(EXIT_FAILURE); // Cannot proceed without devices
+	}
 
-//	struct ether_header ethhdr;
-	int bytes_inject;
+    // Attempt to find a suitable default device (e.g., "eth0", "en0")
+    // This part is very OS-dependent. For now, using the first non-loopback device.
+    for (dev_iter = alldevs; dev_iter != NULL; dev_iter = dev_iter->next) {
+        if (dev_iter->name && !(dev_iter->flags & PCAP_IF_LOOPBACK)) {
+            default_dev_name = dev_iter->name;
+            break;
+        }
+    }
 
-	encode_syn();
+    if (!default_dev_name && alldevs) { // Fallback to the first device if no non-loopback found
+        default_dev_name = alldevs->name;
+    }
 
-	bytes_inject = pcap_inject(pcap_handle, pkt_buf, pkt_size);
-	if (bytes_inject < 0)
-	{
-		pcap_perror(pcap_handle, "An error occured sending a packet");
+	if (!default_dev_name) {
+        fprintf(stderr, "No suitable network interface found.\n");
+        pcap_freealldevs(alldevs);
+        exit(EXIT_FAILURE);
+    }
+
+	if (debugging) printf("Using interface: %s\n", default_dev_name);
+
+    // pcap_open_live: (device, snaplen, promisc, to_ms, errbuf)
+    // BUFSIZ is from <stdio.h>, typically 8192. snaplen should be large enough for expected packets.
+    // to_ms = 1000ms (1s timeout for pcap_next_ex). If 0, pcap_next_ex blocks.
+	pcap_handle_local = pcap_open_live(default_dev_name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
+	if (pcap_handle_local == NULL) {
+		fprintf(stderr, "Couldn't open device %s: %s\n", default_dev_name, errbuf);
+		pcap_freealldevs(alldevs);
 		exit(EXIT_FAILURE);
 	}
 
-	while (1)	
-		recv_packet(pcap_handle);
+	if (pcap_datalink(pcap_handle_local) != DLT_EN10MB) { // Check if Ethernet headers are available
+		fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported by this version of ft_nmap.\n", default_dev_name);
+		pcap_close(pcap_handle_local);
+		pcap_freealldevs(alldevs);
+		exit(EXIT_FAILURE);
+	}
 
-	pcap_close(pcap_handle);
+	pcap_freealldevs(alldevs); // Free the device list
+	return pcap_handle_local;
+}
+
+int main(int argc, char **argv) {
+	pcap_t *pcap_handle_main; // Renamed to make it clear it's main's copy
+	struct nmap_data *nmap_main; // Renamed
+
+	nmap_arg_parse(argc, argv); // Parses args and populates globals like 'ports', 'source', 'scan_type'
+
+	pcap_handle_main = nmap_get_pcap_handle(); // Exits on failure
+
+	nmap_main = nmap_init(); // Exits on failure
+
+    // 'source' global variable (target hostname/IP) is used by nmap_run
+	nmap_run(nmap_main, source, pcap_handle_main);
+
+    if (debugging) printf("Cleaning up resources...\n");
+	free(nmap_main);
+	free(ports); // Ports array allocated in nmap_get_ports
+	pcap_close(pcap_handle_main);
+	
+    if (debugging) printf("ft_nmap finished.\n");
 	return 0;
 }

@@ -1,0 +1,275 @@
+# Conceptual Unit Tests for ft_nmap
+
+This document outlines conceptual unit tests for the key functions in `ft_nmap.c`.
+It is intended to guide the development of actual unit tests using a C testing framework.
+
+## 1. `nmap_get_ports(char *expr, unsigned int *number_of_ports)`
+
+**Objective**: Test the port string parsing logic to ensure correct extraction and validation of port numbers.
+
+**Setup**:
+- For each test, provide a port string expression.
+- Check the returned `unsigned short *ports` array and the value of `*number_of_ports`.
+- Ensure no memory leaks if error occurs during parsing.
+
+**Test Cases**:
+
+### 1.1 Valid Inputs:
+    - **Test 1.1.1: Single Port**:
+        - Input: `"80"`
+        - Expected: `ports` array contains `[80]`, `number_of_ports` is `1`.
+    - **Test 1.1.2: Simple Range**:
+        - Input: `"1-5"`
+        - Expected: `ports` array contains `[1, 2, 3, 4, 5]`, `number_of_ports` is `5`.
+    - **Test 1.1.3: Comma-Separated List**:
+        - Input: `"22,80,443"`
+        - Expected: `ports` array contains `[22, 80, 443]`, `number_of_ports` is `3`.
+    - **Test 1.1.4: Mixed Single, Range, List**:
+        - Input: `"80,1-5,443,1000-1002"`
+        - Expected: `ports` array contains `[80, 1, 2, 3, 4, 5, 443, 1000, 1001, 1002]` (order might vary depending on implementation, but all elements must be present and unique), `number_of_ports` is `10`.
+    - **Test 1.1.5: Range starting with MINPORTS (e.g., "-100")**:
+        - Input: `"-100"` (assuming MINPORTS is 1)
+        - Expected: `ports` array contains `[1, 2, ..., 100]`, `number_of_ports` is `100`.
+    - **Test 1.1.6: Range ending with MAXPORTS (e.g., "1000-")**:
+        - Input: `"1020-"` (assuming MAXPORTS is 1024)
+        - Expected: `ports` array contains `[1020, 1021, 1022, 1023, 1024]`, `number_of_ports` is `5`.
+    - **Test 1.1.7: Full Range (e.g., "-")**:
+        - Input: `"-"`
+        - Expected: `ports` array contains `[1, 2, ..., 1024]` (assuming MINPORTS=1, MAXPORTS=1024), `number_of_ports` is `1024`.
+
+### 1.2 Overlapping and Duplicate Inputs:
+    - **Test 1.2.1: Duplicate Single Ports**:
+        - Input: `"80,80,80"`
+        - Expected: `ports` array contains `[80]`, `number_of_ports` is `1`.
+    - **Test 1.2.2: Overlapping Ranges**:
+        - Input: `"1-10,5-15"`
+        - Expected: `ports` array contains `[1, ..., 15]`, `number_of_ports` is `15`.
+    - **Test 1.2.3: Mixed Duplicates and Overlaps**:
+        - Input: `"22,1-5,80,3,50-55,80"`
+        - Expected: `ports` array contains unique ports from these inputs, `number_of_ports` is the count of unique ports.
+
+### 1.3 Invalid Inputs (Expect error handling, e.g., NULL return or specific error code/exit):
+    - **Test 1.3.1: Invalid Range (start > end)**:
+        - Input: `"10-1"`
+        - Expected: Error, `nmap_print_error_and_exit` called.
+    - **Test 1.3.2: Port Out of Bounds (Too Low)**:
+        - Input: `"0"` (assuming MINPORTS is 1)
+        - Expected: Error.
+    - **Test 1.3.3: Port Out of Bounds (Too High)**:
+        - Input: `"1025"` (assuming MAXPORTS is 1024)
+        - Expected: Error.
+    - **Test 1.3.4: Range Value Out of Bounds**:
+        - Input: `"1000-2000"` (assuming MAXPORTS is 1024)
+        - Expected: Error for the part of range > MAXPORTS.
+    - **Test 1.3.5: Malformed String (non-numeric, misplaced comma/dash)**:
+        - Input: `"abc"`, `"1,,5"`, `"1--5"`, `"1-,"`
+        - Expected: Error for each.
+    - **Test 1.3.6: Mixed Valid and Invalid**:
+        - Input: `"80,abc,443"`
+        - Expected: Error (or parses valid parts and reports error for invalid, depending on desired strictness; current `ft_nmap` likely exits).
+
+### 1.4 Edge Cases:
+    - **Test 1.4.1: Empty String**:
+        - Input: `""`
+        - Expected: Error or `number_of_ports` is `0`. (Current `ft_nmap` might error due to `atoi` behavior on empty string if not caught early).
+    - **Test 1.4.2: String with only commas/dashes**:
+        - Input: `","`, `"-"` (Note: `"-"` is a valid full range, test specific malformed like `",-"`)
+        - Input: `",-"`
+        - Expected: Error.
+    - **Test 1.4.3: Max Number of Ports (if applicable)**:
+        - Input: A string generating more than `MAXPORTS` unique valid ports.
+        - Expected: `number_of_ports` is capped at `MAXPORTS`, or an error/warning is issued. (Current `ft_nmap` has a `MAXPORTS` limit for the `checks` array and `ports` array size).
+    - **Test 1.4.4: Single Port at MINPORTS and MAXPORTS**:
+        - Input: `"1"` (if MINPORTS=1)
+        - Expected: `ports` array `[1]`, `number_of_ports` is `1`.
+        - Input: `"1024"` (if MAXPORTS=1024)
+        - Expected: `ports` array `[1024]`, `number_of_ports` is `1`.
+
+## 2. `nmap_get_scan_type_by_name(char *expr)`
+
+**Objective**: Test parsing of scan type strings into corresponding bitmask flags.
+
+**Setup**:
+- For each test, provide a scan type string.
+- Check the returned `short scan_type_flags`.
+
+**Test Cases**:
+
+### 2.1 Valid Scan Types:
+    - **Test 2.1.1: Single Valid Type (SYN)**:
+        - Input: `"SYN"`
+        - Expected: `scan_type_flags` is `SCAN_SYN`.
+    - **Test 2.1.2: Single Valid Type (UDP)**:
+        - Input: `"UDP"`
+        - Expected: `scan_type_flags` is `SCAN_UDP`.
+    - **Test 2.1.3: Multiple Comma-Separated Valid Types**:
+        - Input: `"SYN,ACK,FIN"`
+        - Expected: `scan_type_flags` is `SCAN_SYN | SCAN_ACK | SCAN_FIN`.
+    - **Test 2.1.4: Case Insensitivity (if `strcasecmp` is used)**:
+        - Input: `"sYn,aCk"`
+        - Expected: `scan_type_flags` is `SCAN_SYN | SCAN_ACK`. (Current `ft_nmap` uses `strcasecmp`).
+    - **Test 2.1.5: All Valid Types**:
+        - Input: `"SYN,NULL,FIN,XMAS,ACK,UDP"`
+        - Expected: `scan_type_flags` is `SCAN_SYN | SCAN_NULL | SCAN_FIN | SCAN_XMAS | SCAN_ACK | SCAN_UDP`.
+
+### 2.2 Invalid Scan Types:
+    - **Test 2.2.1: Single Invalid Type**:
+        - Input: `"INVALID"`
+        - Expected: `scan_type_flags` is `0` (or an error indicated, current `ft_nmap` prints a warning and returns 0 for that token).
+    - **Test 2.2.2: Mixed Valid and Invalid Types**:
+        - Input: `"SYN,INVALID,ACK"`
+        - Expected: `scan_type_flags` is `SCAN_SYN | SCAN_ACK`. (Invalid token is ignored).
+    - **Test 2.2.3: Malformed Input (e.g., extra commas)**:
+        - Input: `"SYN,,ACK"` or `",SYN"`
+        - Expected: `scan_type_flags` is `SCAN_SYN | SCAN_ACK`. (Empty tokens should be ignored).
+
+### 2.3 Edge Cases:
+    - **Test 2.3.1: Empty String**:
+        - Input: `""`
+        - Expected: `scan_type_flags` is `0`.
+    - **Test 2.3.2: String with only commas**:
+        - Input: `","` or `",,"`
+        - Expected: `scan_type_flags` is `0`.
+
+## 3. Packet Crafting (e.g., `craft_syn_packet`)
+
+**Objective**: Verify that packet headers (Ethernet, IP, TCP) are constructed correctly.
+
+**Setup**:
+- Call `craft_syn_packet` with specific `nmap_data` (target IP), destination port, and buffer.
+- Inspect the contents of the `packet_buffer`.
+- Check returned packet size.
+
+**Test Cases**:
+
+### 3.1 Ethernet Header (`struct ethhdr`):
+    - **Test 3.1.1: Protocol Type**:
+        - Check: `eth->h_proto` is `htons(ETH_P_IP)`.
+    - **Test 3.1.2: MAC Addresses**:
+        - Check: Source and Destination MACs are set (even if to placeholders like 0xAA and 0xBB). (Actual MACs depend on external factors not testable in pure unit test).
+
+### 3.2 IP Header (`struct ip` or `struct iphdr`):
+    - **Test 3.2.1: Version and Header Length**:
+        - Check: `iph->ip_v` is `4`.
+        - Check: `iph->ip_hl` is `5` (for no IP options).
+    - **Test 3.2.2: Total Length**:
+        - Check: `ntohs(iph->ip_len)` is `sizeof(struct ip) + sizeof(struct tcphdr)`.
+    - **Test 3.2.3: Protocol**:
+        - Check: `iph->ip_p` is `IPPROTO_TCP`.
+    - **Test 3.2.4: Source and Destination IP**:
+        - Check: `iph->ip_src.s_addr` matches the (placeholder or actual) source IP.
+        - Check: `iph->ip_dst.s_addr` matches the target IP from `nmap_data`.
+    - **Test 3.2.5: TTL**:
+        - Check: `iph->ip_ttl` is set to a reasonable value (e.g., 64).
+    - **Test 3.2.6: IP Checksum (Conceptual)**:
+        - Check: If IP checksum is calculated by the function (not kernel), verify its conceptual correctness (e.g., it's non-zero if data is present, or zero if offloaded). Actual validation is complex.
+
+### 3.3 TCP Header (`struct tcphdr`):
+    - **Test 3.3.1: Source and Destination Ports**:
+        - Check: `ntohs(tcph->th_sport)` matches `DEFAULT_SRC_PORT`.
+        - Check: `ntohs(tcph->th_dport)` matches the `dest_port` argument.
+    - **Test 3.3.2: Flags (for SYN packet)**:
+        - Check: `tcph->th_flags` has `TH_SYN` set and other flags (ACK, RST, FIN) are clear.
+    - **Test 3.3.3: Sequence Number**:
+        - Check: `tcph->th_seq` is non-zero (should be randomized).
+    - **Test 3.3.4: ACK Sequence Number**:
+        - Check: `tcph->th_ack` is `0` for a SYN packet.
+    - **Test 3.3.5: Data Offset**:
+        - Check: `tcph->th_off` is `5` (for no TCP options).
+    - **Test 3.3.6: Window Size**:
+        - Check: `tcph->th_win` is set to a reasonable value.
+    - **Test 3.3.7: TCP Checksum (Conceptual)**:
+        - Check: `tcph->th_sum` is calculated correctly based on pseudo-header and TCP segment. Conceptual verification that it's non-zero and changes with data.
+
+### 3.4 Buffer and Size:
+    - **Test 3.4.1: Packet Size Return Value**:
+        - Check: Returned size from `craft_syn_packet` equals `sizeof(struct ethhdr) + sizeof(struct ip) + sizeof(struct tcphdr)`.
+    - **Test 3.4.2: Buffer Too Small**:
+        - Input: `buffer_size` argument smaller than required packet size.
+        - Expected: Function returns `0` or indicates error, and does not write past the provided buffer.
+
+## 4. `analyze_response_packet(const struct pcap_pkthdr *header, const u_char *bytes, struct nmap_data *nmap, struct nmap_port_result *results, unsigned int num_total_ports)`
+
+**Objective**: Test the logic for parsing response packets and updating port states.
+
+**Setup**:
+- Prepare a `struct nmap_port_result results[]` array initialized with some ports as `PORT_UNSCANNED` or `PORT_FILTERED`.
+- Prepare `nmap_data` with a known target IP.
+- Craft mock packet data (`bytes`) and `pcap_pkthdr` (`header` with `caplen`).
+
+**Test Cases**:
+
+### 4.1 Valid Responses (SYN Scan context):
+    - **Test 4.1.1: SYN-ACK Received for a Scanned Port**:
+        - Input: Packet with Ethernet, IP (src=target, dst=our_ip), TCP (src_port=scanned_port_X, dst_port=DEFAULT_SRC_PORT, flags=SYN|ACK).
+        - Expected: `results[X].state` becomes `PORT_OPEN`.
+    - **Test 4.1.2: RST or RST-ACK Received for a Scanned Port**:
+        - Input: Packet with Ethernet, IP (src=target, dst=our_ip), TCP (src_port=scanned_port_Y, dst_port=DEFAULT_SRC_PORT, flags=RST or RST|ACK).
+        - Expected: `results[Y].state` becomes `PORT_CLOSED` (if not already `PORT_OPEN`).
+    - **Test 4.1.3: Packet for a port already marked OPEN (e.g., late RST after SYN-ACK)**:
+        - Input: `results[X].state` is `PORT_OPEN`. Then an RST packet arrives for port X.
+        - Expected: `results[X].state` remains `PORT_OPEN`.
+
+### 4.2 Irrelevant or Ignored Packets:
+    - **Test 4.2.1: Packet from Wrong Source IP**:
+        - Input: IP source is not `nmap->target_addr.sin_addr`.
+        - Expected: No change in `results` array.
+    - **Test 4.2.2: Packet to Wrong Destination IP**:
+        - Input: IP destination is not `inet_addr(DEFAULT_SRC_IP)`.
+        - Expected: No change in `results` array.
+    - **Test 4.2.3: Packet to Wrong Destination Port (not DEFAULT_SRC_PORT)**:
+        - Input: TCP `th_dport` is not `DEFAULT_SRC_PORT`.
+        - Expected: No change in `results` array.
+    - **Test 4.2.4: Packet from a TCP Source Port not in our `results` list**:
+        - Input: TCP `th_sport` is a port number not among those being scanned.
+        - Expected: No change in `results` array.
+    - **Test 4.2.5: Non-IP Packet**:
+        - Input: Ethernet `h_proto` is not `ETH_P_IP`.
+        - Expected: No change in `results` array.
+    - **Test 4.2.6: Non-TCP Packet (after IP check)**:
+        - Input: IP `ip_p` is not `IPPROTO_TCP`.
+        - Expected: No change in `results` array.
+
+### 4.3 Malformed/Short Packets (Boundary Checks):
+    - **Test 4.3.1: Packet too short for Ethernet Header**:
+        - Input: `header->caplen < sizeof(struct ethhdr)`.
+        - Expected: Function returns early, no crash, no change in `results`.
+    - **Test 4.3.2: Packet too short for minimal IP Header**:
+        - Input: `header->caplen < sizeof(struct ethhdr) + sizeof(struct ip)`.
+        - Expected: Function returns early.
+    - **Test 4.3.3: Packet with Invalid IP Header Length (ip_hl too small)**:
+        - Input: `ip_header->ip_hl * 4 < sizeof(struct ip)`.
+        - Expected: Function returns early.
+    - **Test 4.3.4: Packet shorter than declared IP Header Length**:
+        - Input: `header->caplen < sizeof(struct ethhdr) + (ip_header->ip_hl * 4)`.
+        - Expected: Function returns early.
+    - **Test 4.3.5: Packet too short for minimal TCP Header**:
+        - Input: `header->caplen < sizeof(struct ethhdr) + (ip_header->ip_hl * 4) + sizeof(struct tcphdr)`.
+        - Expected: Function returns early.
+    - **Test 4.3.6: (Optional) Packet shorter than declared TCP Header Length (if th_off is used for variable length TCP headers)**.
+
+## 5. `state_to_string(port_state_t state)`
+
+**Objective**: Verify that each enum state correctly maps to its string representation.
+
+**Setup**:
+- Call `state_to_string` with each possible `port_state_t` value.
+
+**Test Cases**:
+    - **Test 5.1.1: PORT_OPEN**:
+        - Input: `PORT_OPEN`
+        - Expected: Returns string `"Open"`.
+    - **Test 5.1.2: PORT_CLOSED**:
+        - Input: `PORT_CLOSED`
+        - Expected: Returns string `"Closed"`.
+    - **Test 5.1.3: PORT_FILTERED**:
+        - Input: `PORT_FILTERED`
+        - Expected: Returns string `"Filtered"`.
+    - **Test 5.1.4: PORT_UNSCANNED**:
+        - Input: `PORT_UNSCANNED`
+        - Expected: Returns string `"Unscanned"`.
+    - **Test 5.1.5: Invalid Enum Value (Conceptual)**:
+        - Input: An integer value not corresponding to any defined `port_state_t`.
+        - Expected: Returns a default string like `"Unknown"` or handles gracefully.
+
+This outline should provide a solid foundation for developing comprehensive unit tests.
