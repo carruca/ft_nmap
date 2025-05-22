@@ -20,6 +20,8 @@
 #define NMAP_FILE_OPTARG 		0x02
 #define NMAP_PORTS_OPTARG 	0x04
 
+#define ETH0 								1
+
 int number_of_packets = 0;
 unsigned int number_of_ports = 0;
 unsigned short number_of_threads = 0;
@@ -155,12 +157,13 @@ nmap_get_ports(char *expr, unsigned int *number_of_ports)
 	unsigned short *ports;
 	int count, start, end;
 	char *next, *dash;
-	char check_port[MAXPORTS + 1] = {0};
+	char checks[MAXPORTS + 1];
 
 	ports = malloc(MAXPORTS * sizeof(unsigned short));
 	if (ports == NULL)
 		nmap_print_error_and_exit("get_ports: malloc failed.");
 
+	memset(checks, 0, MAXPORTS + 1);
 	count = 0;
 	next = expr;
 	while (next != NULL)
@@ -189,10 +192,10 @@ nmap_get_ports(char *expr, unsigned int *number_of_ports)
 
 		for (int i = start; i <= end; ++i)
 		{
-			if (check_port[i] == 0)
+			if (checks[i] == 0)
 			{
 				ports[count++] = i;
-				check_port[i] = 1;
+				checks[i] = 1;
 			}
 		}
 		expr = next + 1;
@@ -326,15 +329,18 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 int
 nmap_set_target(struct nmap_data *nmap, const char *hostname)
 {
-	int rc;
+	int s;
 	struct addrinfo hints, *res;
 
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_INET;
 
-	rc = getaddrinfo(hostname, NULL, &hints, &res);
-	if (rc != 0)
+	s = getaddrinfo(hostname, NULL, &hints, &res);
+	if (s != 0)
+	{
+		fprintf(stderr, "ft_nmap: failed to resolve \"%s\": %s\n", hostname, gai_strerror(s));
 		return 1;
+	}
 	memcpy(&nmap->target_addr, res->ai_addr, res->ai_addrlen);
 	freeaddrinfo(res);
 	return 0;
@@ -343,8 +349,19 @@ nmap_set_target(struct nmap_data *nmap, const char *hostname)
 void
 nmap_run(struct nmap_data *nmap, const char *hostname)
 {
-	nmap_set_target(nmap, hostname);
+	if (nmap_set_target(nmap, hostname))
+		exit(EXIT_FAILURE);
 	nmap_print_scan_config(nmap, number_of_ports, scan_type, number_of_threads);
+
+	// TODO: run
+	// xmit
+	// 	bucle de puertos
+	// 	bucle de tipos de escaneo
+	// recv
+	// 	pcap_next_ex
+	// 	analizar mensaje recibido y guardar estadisticas
+	// print
+	// 	estadisticas
 }
 
 struct nmap_data *
@@ -475,8 +492,8 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 	return 0;
 }
 
-int
-main(int argc, char **argv)
+pcap_t *
+nmap_get_pcap_handle()
 {
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
@@ -484,13 +501,6 @@ main(int argc, char **argv)
 	size_t num;
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t *pcap_handle;
-	u_char *pkt_buf;
-	size_t pkt_size;
-	struct nmap_data *nmap;
-	int arg_index;
-
-	if (nmap_arg_parse(argc, argv, &arg_index))
-		nmap_print_error_and_exit("arg_parse failed.");
 
 	if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR)
 	{
@@ -515,7 +525,7 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 */
-	num = 1;
+	num = ETH0;
 	for (dev = alldevs, number_of_devices = 0; number_of_devices < num - 1; dev = dev->next, ++number_of_devices);
 	printf("%s interface opening...\n", dev->name);
 
@@ -525,7 +535,7 @@ main(int argc, char **argv)
 		fprintf(stderr, "Couldn't open device %s: %s\n",
 			dev->name,
 			errbuf);
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
 	if (pcap_datalink(pcap_handle) != DLT_EN10MB)
@@ -536,6 +546,22 @@ main(int argc, char **argv)
 	}
 
 	pcap_freealldevs(alldevs);
+	return pcap_handle;
+}
+
+int
+main(int argc, char **argv)
+{
+	pcap_t *pcap_handle;
+	struct nmap_data *nmap;
+	int arg_index;
+
+	if (nmap_arg_parse(argc, argv, &arg_index))
+		nmap_print_error_and_exit("arg_parse failed.");
+
+	pcap_handle = nmap_get_pcap_handle();
+	if (pcap_handle == NULL)
+		nmap_print_error_and_exit("pcap_handle failed.");
 
 	nmap = nmap_init();
 	if (nmap == NULL)
@@ -554,6 +580,8 @@ main(int argc, char **argv)
 	pcap_close(pcap_handle);
 	return 0;
 
+	u_char *pkt_buf;
+	size_t pkt_size;
 
 	pkt_size = 100;
 	pkt_buf = NULL;
