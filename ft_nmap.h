@@ -30,7 +30,7 @@
 # define SCAN_ACK   0x0010
 # define SCAN_UDP   0x0020
 # define SCAN_ALL   0x003F
-
+/*
 struct scan_mode
 {
   const char *name;
@@ -46,7 +46,7 @@ enum e_port_state
   PORT_OPENFILTERED,
   PORT_CLOSEDFILTERED
 };
-
+*/
 typedef enum e_port_state t_port_state;
 
 struct s_port

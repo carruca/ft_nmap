@@ -100,13 +100,13 @@ static const struct scan_mode scan_modes[] = {
 	{"ACK", SCAN_ACK},
 	{"UDP", SCAN_UDP}
 };
-
+/*
 // Forward declarations
 static size_t craft_syn_packet(struct nmap_data *nmap, uint16_t dest_port, u_char *packet_buffer, size_t buffer_size);
 static void analyze_response_packet(const struct pcap_pkthdr *header, const u_char *bytes, struct nmap_data *nmap, struct nmap_port_result *results, unsigned int num_total_ports);
 static const char* state_to_string(port_state_t state);
 void nmap_print_error_and_exit(char *error); // Make it static if only used in this file
-
+*/
 // Main nmap data structure
 struct nmap_data {
 	struct sockaddr_in target_addr; // Target's address information
@@ -352,6 +352,43 @@ static void analyze_response_packet(const struct pcap_pkthdr *header, const u_ch
 	}
 }
 
+void
+nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int threads)
+{
+	printf("Scan configurations\n");
+	printf("Target IP-Address : %s\n",
+		inet_ntoa(nmap->target_addr.sin_addr));
+	printf("No of ports to scan : %d\n", ports);
+	printf("Scans to be performed :");
+	for (int i = 0; i < MAXSCANS; ++i)
+	{
+		if (scan_modes[i].flag & scan_mode)
+			printf(" %s", scan_modes[i].name);
+	}
+	printf("\n");
+	printf("No of threads : %d\n", threads);
+}
+
+int
+nmap_set_target(struct nmap_data *nmap, const char *hostname)
+{
+	int s;
+	struct addrinfo hints, *res;
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_INET;
+
+	s = getaddrinfo(hostname, NULL, &hints, &res);
+	if (s != 0)
+	{
+		fprintf(stderr, "ft_nmap: failed to resolve \"%s\": %s\n", hostname, gai_strerror(s));
+		return 1;
+	}
+	memcpy(&nmap->target_addr, res->ai_addr, res->ai_addrlen);
+	freeaddrinfo(res);
+	return 0;
+}
+
 void nmap_run(struct nmap_data *nmap, const char *hostname, pcap_t *pcap_handle) {
 	time_t scan_overall_start_time, scan_overall_end_time;
 	struct nmap_port_result *results = NULL;
@@ -483,11 +520,12 @@ void print_usage_and_exit(char *name) {
 }
 
 void nmap_ip_file_parse(const char *fname) {
-    // TODO: Implement parsing IPs from a file
-    fprintf(stderr, "Warning: --file option is not yet implemented. Scanning %s instead if provided via --ip.\n", source ? source : "no target");
-    if (!source) { // If --file was the only source of targets
-        nmap_print_error_and_exit("--file processing not implemented and no --ip target given.");
-    }
+  // TODO: Implement parsing IPs from a file
+  fprintf(stderr, "Warning: --file option is not yet implemented. Scanning %s instead if provided via --ip.\n", source ? source : "no target");
+  if (!source) { // If --file was the only source of targets
+      nmap_print_error_and_exit("--file processing not implemented and no --ip target given.");
+  }
+  (void)fname;
 }
 
 char *get_program_name(char *arg) {
