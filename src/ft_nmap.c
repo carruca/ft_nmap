@@ -327,7 +327,7 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 }
 
 int
-nmap_set_target(struct nmap_data *nmap, const char *hostname)
+nmap_set_target_addr(struct nmap_data *nmap, const char *hostname)
 {
 	int s;
 	struct addrinfo hints, *res;
@@ -346,10 +346,18 @@ nmap_set_target(struct nmap_data *nmap, const char *hostname)
 	return 0;
 }
 
+int
+nmap_xmit(struct nmap_data *nmap, const char *hostname)
+{
+	(void)nmap;
+	(void)hostname;
+	return 0;
+}
+
 void
 nmap_run(struct nmap_data *nmap, const char *hostname)
 {
-	if (nmap_set_target(nmap, hostname))
+	if (nmap_set_target_addr(nmap, hostname))
 		exit(EXIT_FAILURE);
 	nmap_print_scan_config(nmap, number_of_ports, scan_type, number_of_threads);
 
@@ -362,6 +370,8 @@ nmap_run(struct nmap_data *nmap, const char *hostname)
 	// 	analizar mensaje recibido y guardar estadisticas
 	// print
 	// 	estadisticas
+	nmap_xmit(nmap, hostname);
+	
 }
 
 struct nmap_data *
@@ -577,31 +587,6 @@ main(int argc, char **argv)
 
 	free(nmap);
 	free(ports);
-	pcap_close(pcap_handle);
-	return 0;
-
-	u_char *pkt_buf;
-	size_t pkt_size;
-
-	pkt_size = 100;
-	pkt_buf = NULL;
-	pkt_buf = set_buffer(pkt_buf, pkt_size);
-
-//	struct ether_header ethhdr;
-	int bytes_inject;
-
-	encode_syn();
-
-	bytes_inject = pcap_inject(pcap_handle, pkt_buf, pkt_size);
-	if (bytes_inject < 0)
-	{
-		pcap_perror(pcap_handle, "An error occured sending a packet");
-		exit(EXIT_FAILURE);
-	}
-
-	while (1)	
-		recv_packet(pcap_handle);
-
 	pcap_close(pcap_handle);
 	return 0;
 }
