@@ -21,7 +21,7 @@
 # include <signal.h>
 # include <stdlib.h>
 
-# define MAXSCANS   6
+# define MAXSCANS   1
 
 # define SCAN_SYN   0x0001
 # define SCAN_NULL  0x0002
@@ -35,6 +35,7 @@ struct scan_mode
 {
   const char *name;
   short flag;
+  int (*encode_and_send)(char *, size_t, struct sockaddr_in *, short, int);
 };
 
 enum e_port_state

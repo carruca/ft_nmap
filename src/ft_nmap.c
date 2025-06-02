@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <errno.h>
 #include <limits.h>
+#include <netinet/tcp.h>
 
 
 #define MAXIPHDRLEN					20
@@ -21,6 +22,8 @@
 #define NMAP_PORTS_OPTARG 	0x04
 
 #define ETH0 								1
+#define TCP_WORDS_HLEN 			6
+#define DATALEN 						4
 
 int number_of_packets = 0;
 unsigned int number_of_ports = 0;
@@ -122,13 +125,14 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 				printf("Ports: %d -> %d\n",
 					ntohs(tcphdr->th_sport),
 					ntohs(tcphdr->th_dport));
-				printf("Flags:%s%s%s%s%s Seq:0x%x Ack:0x%x\n",
+				printf("Flags:%s%s%s%s%s Seq:0x%x Ack:0x%x Off:%d Sum:%d Win:%d\n",
 					(tcphdr->th_flags & TH_URG ? "URG" : "*"),
 					(tcphdr->th_flags & TH_ACK ? "ACK" : "*"),
 					(tcphdr->th_flags & TH_PUSH ? "PUSH" : "*"),
 					(tcphdr->th_flags & TH_RST ? "RST" : "*"),
 					(tcphdr->th_flags & TH_SYN ? "SYN" : "*"),
-					ntohs(tcphdr->th_seq), ntohs(tcphdr->th_ack));
+					ntohs(tcphdr->th_seq), ntohs(tcphdr->th_ack),
+					tcphdr->th_off, tcphdr->th_sum, tcphdr->th_win);
 				break;
 
 			case IPPROTO_UDP:
@@ -278,35 +282,63 @@ recv_packet(pcap_t *handle)
 	return 0;
 }
 
-// scan(sock, )
-
-u_char *
-set_buffer(u_char *buffer, size_t size)
-{
-
-	if (buffer == NULL)
-		buffer = malloc(size);
-	return buffer;
-}
-
-int
-encode_syn()
-{
-	return 0;
-}
-
 struct nmap_data
 {
 	struct sockaddr_in target_addr;
+	pid_t id;
 };
 
-static const struct scan_mode scan_modes[] = {
-	{"SYN", SCAN_SYN},
-	{"NULL", SCAN_NULL},
+unsigned short
+cksum(char *buffer, size_t bufsize)
+{
+	register int sum = 0;
+	unsigned short *wp;
+
+	for (wp = (unsigned short *)buffer; bufsize > 1; wp++, bufsize -= 2)
+		sum += *wp;
+	sum = (sum >> 16) + (sum & 0xffff);
+	sum += (sum >> 16);
+	return ~sum;
+}
+
+int
+nmap_syn_encode_and_send(
+	char *buffer, size_t bufsize,
+	struct sockaddr_in *target_addr,
+	short port, int sockfd)
+{
+	struct tcphdr *th;
+	ssize_t number_of_bytes_sent;
+
+	th = (struct tcphdr *)buffer;
+	th->th_sport = htons(58936);
+	th->th_dport = htons(port);
+	th->th_seq = 0;
+	th->th_ack = 0;
+	th->th_off = TCP_WORDS_HLEN;
+	th->th_flags = TH_SYN;
+	th->th_sum = 0;
+	th->th_win = 4;
+
+	th->th_sum = cksum(buffer, bufsize);
+
+	number_of_bytes_sent = sendto(sockfd, buffer, bufsize, 0,
+		(struct sockaddr *)target_addr, sizeof(struct sockaddr_in));
+	if (number_of_bytes_sent < 0)
+		return 1;
+	if (debugging)
+		printf("successfully sent %lu bytes of raw_tcp.\n", number_of_bytes_sent);
+	return 0;
+}
+
+const struct scan_mode scan_modes[] =
+{
+/*	{"NULL", SCAN_NULL},
 	{"FIN", SCAN_FIN},
 	{"XMAS", SCAN_XMAS},
 	{"ACK", SCAN_ACK},
 	{"UDP", SCAN_UDP}
+*/	{"SYN", SCAN_SYN, nmap_syn_encode_and_send}
 };
 
 void
@@ -347,10 +379,39 @@ nmap_set_target_addr(struct nmap_data *nmap, const char *hostname)
 }
 
 int
-nmap_xmit(struct nmap_data *nmap, const char *hostname)
+nmap_xmit(struct nmap_data *nmap, short scan_type)
 {
-	(void)nmap;
-	(void)hostname;
+	char *buffer;
+	size_t bufsize;
+	int sockfd;
+	struct protoent *proto;
+
+	bufsize = sizeof(struct tcphdr) + DATALEN;
+	printf("bufsize=%ld\n", bufsize);
+	buffer = malloc(bufsize);
+	if (buffer == NULL)
+		nmap_print_error_and_exit("buffer malloc failed.");
+
+	proto = getprotobyname("tcp");
+	if (proto == NULL)
+	{
+		perror("getprotobyname");
+		return 1;
+	}
+	sockfd = socket(AF_INET, SOCK_RAW, proto->p_proto);
+	if (sockfd < 0)
+	{
+		perror("socket");
+		return 1;
+	}
+
+	for (int i = 0; i < MAXSCANS; ++i)
+	{
+		if (scan_modes[i].flag & scan_type)
+			scan_modes[i].encode_and_send(buffer, bufsize, &nmap->target_addr, ports[0], sockfd);
+	}
+	close(sockfd);
+	free(buffer);
 	return 0;
 }
 
@@ -370,8 +431,8 @@ nmap_run(struct nmap_data *nmap, const char *hostname)
 	// 	analizar mensaje recibido y guardar estadisticas
 	// print
 	// 	estadisticas
-	nmap_xmit(nmap, hostname);
-	
+	if (nmap_xmit(nmap, scan_type))
+		exit(EXIT_FAILURE);
 }
 
 struct nmap_data *
@@ -382,7 +443,9 @@ nmap_init()
 	nmap = malloc(sizeof(struct nmap_data));
 	if (nmap == NULL)
 		return NULL;
+
 	memset(nmap, 0, sizeof(*nmap));
+	nmap->id = getpid();
 	return nmap;
 }
 
@@ -508,7 +571,7 @@ nmap_get_pcap_handle()
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
 	size_t number_of_devices;
-	size_t num;
+	size_t iface;
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t *pcap_handle;
 
@@ -535,8 +598,8 @@ nmap_get_pcap_handle()
 		exit(EXIT_FAILURE);
 	}
 */
-	num = ETH0;
-	for (dev = alldevs, number_of_devices = 0; number_of_devices < num - 1; dev = dev->next, ++number_of_devices);
+	iface = ETH0;
+	for (dev = alldevs, number_of_devices = 0; number_of_devices < iface - 1; dev = dev->next, ++number_of_devices);
 	printf("%s interface opening...\n", dev->name);
 
 	pcap_handle = pcap_open_live(dev->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
@@ -584,9 +647,13 @@ main(int argc, char **argv)
 		scan_type = SCAN_ALL;
 
 	nmap_run(nmap, source);
+	printf("\n");
+	while (1)
+		recv_packet(pcap_handle);
 
 	free(nmap);
 	free(ports);
 	pcap_close(pcap_handle);
+
 	return 0;
 }
