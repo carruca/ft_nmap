@@ -22,7 +22,9 @@
 #define NMAP_PORTS_OPTARG 	0x04
 
 #define ETH0 								1
-#define TCP_WORDS_HLEN 			6
+#define IPV4 								4
+#define IP_HLEN 						sizeof(struct ip) >> 2
+#define TCP_HLEN 						sizeof(struct tcphdr) >> 2
 #define DATALEN 						4
 
 int number_of_packets = 0;
@@ -38,53 +40,110 @@ unsigned short *ports = NULL;
 char *source = NULL;
 char *filename = NULL;
 
-void
-print_host(const u_char *host, char *origin)
-{
-	printf("%s MAC Address: %s\n", origin, ether_ntoa((struct ether_addr *)host));
-}
-
 uint16_t
 handle_ethernet(const u_char *bytes)
 {
-	const struct ether_header *ether;
+	const struct ether_header *eth;
 	uint16_t type;
 
-	ether = (struct ether_header *)bytes;
-	type = ntohs(ether->ether_type);
+	eth = (struct ether_header *)bytes;
+	type = ntohs(eth->ether_type);
 
 	if (type == ETHERTYPE_IP)
-	{
-		printf("Ethernet type hex:0x%x dec:%d is a IP packet\n",
-				type,
-				type);
-	}
+		printf("   Type                 : IP (hex) 0x%x (dec) %d\n", type, type);
 	else if (type == ETHERTYPE_ARP)
-	{
-		printf("Ethernet type hex:0x%x dec:%d is a ARP packet\n",
-				type,
-				type);
-	}
+		printf("   Type                 : ARP (hex) 0x%x (dec) %d\n", type, type);
 	else if (type == ETHERTYPE_REVARP)
-	{
-		printf("Ethernet type hex:0x%x dec:%d is a REVARP packet\n",
-				type,
-				type);
-	}
+		printf("   Type                 : REVARP (hex) 0x%x (dec) %d\n", type, type);
 	else
-	{
-		printf("Ethernet type hex:0x%x dec:%d not IP\n",
-				type,
-				type);
-	}
+		printf("   Type                 : not IP (hex) 0x%x (dec) %d\n", type, type);
 
-	print_host(ether->ether_dhost, "Destination");
-	print_host(ether->ether_shost, "Source");
+	printf("   Destination Mac      : %s\n", ether_ntoa((struct ether_addr *)eth->ether_dhost));
+  printf("   Source Mac           : %s\n", ether_ntoa((struct ether_addr *)eth->ether_shost));
+
 	return type;
 }
 
 void
 print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
+{
+	struct iphdr *ip;
+	struct tcphdr *th;
+	struct icmp *icmp;
+  struct sockaddr_in ip_source, ip_dest;
+  unsigned short ip_hlen;
+	uint16_t ether_type;
+
+	++number_of_packets;
+	printf("\n################### PACKET n%d ###################", number_of_packets);
+	printf("\nETH header\n");
+	printf("   Packet lenght        : %d Bytes\n", header->len);
+	printf("   Recv time            : %s", ctime((const time_t*)&header->ts.tv_sec));
+
+  memset(&ip_source, 0, sizeof(ip_source));
+  memset(&ip_dest, 0, sizeof(ip_dest));
+
+	ether_type = handle_ethernet(bytes);
+	if (ether_type == ETHERTYPE_IP)
+	{
+		bytes += ETH_HLEN;
+		ip = (struct iphdr*)bytes;
+		ip_source.sin_addr.s_addr = ip->saddr;
+		ip_dest.sin_addr.s_addr = ip->daddr;
+		ip_hlen = ip->ihl << 2;
+
+		printf("\nIP header\n");
+		printf("   Version              : %d\n", (unsigned int)ip->version);
+		printf("   Header Lenght        : %d Bytes\n", ((unsigned int)ip_hlen));
+		printf("   Type of Service      : %d\n", (unsigned int)ip->tos);
+		printf("   Total length         : %d Bytes\n", ntohs(ip->tot_len));
+		printf("   Identification       : %d\n", ntohs(ip->id));
+		printf("   Time-To-Live         : %d\n", (unsigned int)(ip->ttl));
+		printf("   Protocol             : %d\n", (unsigned int)(ip->protocol));
+		printf("   Checksum             : %d\n", (unsigned int)(ip->check));
+		printf("   Source IP            : %s\n", inet_ntoa(ip_source.sin_addr));
+		printf("   Destination IP       : %s\n", inet_ntoa(ip_dest.sin_addr));
+
+		bytes += ip_hlen;
+		switch(ip->protocol)
+		{
+			case IPPROTO_ICMP:
+				icmp = (struct icmp *)bytes;
+				printf("\nICMP header\n");
+				printf("Type:%d Code:%d Seq:%d\n",
+					icmp->icmp_type, icmp->icmp_code, ntohs(icmp->icmp_seq));
+				break;
+
+			case IPPROTO_TCP:
+				ip_hlen = ip->ihl << 2;
+				th = (struct tcphdr*)(bytes);
+
+				printf("\nTCP header\n");
+				printf("   Source port          : %u\n", ntohs(th->source));
+				printf("   Destination port     : %u\n", ntohs(th->dest));
+				printf("   Sequence number      : %u\n", ntohl(th->seq));
+				printf("   Ack number           : %u\n", ntohl(th->ack_seq));
+				printf("   Header length        : %u Bytes\n", (unsigned int)th->doff*4);
+				printf("   URG                  : %u\n", (unsigned int)th->urg);
+				printf("   ACK                  : %u\n", (unsigned int)th->ack);
+				printf("   PSH                  : %u\n", (unsigned int)th->psh);
+				printf("   RST                  : %u\n", (unsigned int)th->rst);
+				printf("   SYN                  : %u\n", (unsigned int)th->syn);
+				printf("   FIN                  : %u\n", (unsigned int)th->fin);
+				printf("   Window               : %u\n", htons(th->window));
+				printf("   Checksum             : %u\n", htons(th->check));
+				printf("   urgent Pointer       : %u\n", htons(th->urg_ptr));
+				break;
+
+			default:
+				printf("Protocol is %d\n", ip->protocol);
+		}
+	}
+  printf("\n");
+}
+
+void
+print_packet_info2(const struct pcap_pkthdr *header, const u_char *bytes)
 {
 	uint16_t ether_type;
 	struct ip *ip;
@@ -96,7 +155,6 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 	printf("Grabbed packet of lenght: %d\n", header->len);
 	printf("Total number of packets: %d\n", number_of_packets);
 	printf("Recieved at .... %s", ctime((const time_t*)&header->ts.tv_sec));
-	printf("Ethernet address lenght is %d\n", ETH_HLEN);
 
 	ether_type = handle_ethernet(bytes);
 	if (ether_type == ETHERTYPE_IP)
@@ -282,12 +340,6 @@ recv_packet(pcap_t *handle)
 	return 0;
 }
 
-struct nmap_data
-{
-	struct sockaddr_in target_addr;
-	pid_t id;
-};
-
 unsigned short
 cksum(char *buffer, size_t bufsize)
 {
@@ -301,33 +353,95 @@ cksum(char *buffer, size_t bufsize)
 	return ~sum;
 }
 
+struct pseudo_header
+{
+	unsigned long src_addr;
+	unsigned long dst_addr;
+	char zero;
+	unsigned char protocol;
+	unsigned long tcp_length;
+
+};
+
+unsigned short
+tcp_cksum(
+	const struct sockaddr_in *src_sockaddr,
+	const struct sockaddr_in *dst_sockaddr,
+	const struct tcphdr *th)
+{
+  struct pseudo_header psh;
+  unsigned int sum = 0;
+  size_t th_len = sizeof(struct tcphdr);
+  struct in_addr inp;
+
+	inet_aton("172.28.183.109", &inp);
+	(void)src_sockaddr;
+//  psh.src_addr = src_sockaddr->sin_addr.s_addr;
+  psh.src_addr = inp.s_addr;
+  psh.dst_addr = dst_sockaddr->sin_addr.s_addr;
+  psh.zero = 0;
+	psh.protocol = IPPROTO_TCP;
+	psh.tcp_length = htons(th_len);
+
+	const unsigned short *ptr = (const unsigned short *)&psh;
+	for (size_t i = 0; i < sizeof(struct pseudo_header) / 2; ++i)
+		sum += *ptr++;
+
+	ptr = (const unsigned short *)th;
+	size_t tcp_header_words = sizeof(struct tcphdr) / 2;
+
+	for (size_t i = 0; i < tcp_header_words; ++i)
+		sum += *ptr++;
+
+	while (sum >> 16)
+		sum = (sum & 0xFFFF) + (sum >> 16);
+
+	return (unsigned short)(~sum);
+}
+
 int
-nmap_syn_encode_and_send(
+syn_encode_and_send(
 	char *buffer, size_t bufsize,
-	struct sockaddr_in *target_addr,
+	struct sockaddr_in *src_sockaddr,
+	struct sockaddr_in *dst_sockaddr,
 	short port, int sockfd)
 {
+//	struct ip *ip;
 	struct tcphdr *th;
 	ssize_t number_of_bytes_sent;
+	pid_t pid = getpid();
 
+	memset(buffer, 0, bufsize);
+/*
+	ip = (struct ip *)buffer;
+	ip->ip_hl = IP_HLEN;
+	ip->ip_v = IPV4;
+	ip->ip_len = htons(bufsize);
+	ip->ip_id = htons(rand() % 65535);
+	ip->ip_ttl = 64;
+	ip->ip_p = IPPROTO_TCP;
+//	ip->ip_src = src_sockaddr->sin_addr;
+	inet_aton("172.28.183.109", &ip->ip_src);
+	ip->ip_dst = dst_sockaddr->sin_addr;
+
+	ip->ip_sum = cksum(buffer, ip->ip_len >> 1);
+*/
+//	th = (struct tcphdr *)(buffer + sizeof(struct ip));
 	th = (struct tcphdr *)buffer;
-	th->th_sport = htons(58936);
+	th->th_sport = htons(rand() % 65535);
 	th->th_dport = htons(port);
-	th->th_seq = 0;
-	th->th_ack = 0;
-	th->th_off = TCP_WORDS_HLEN;
+	th->th_seq = htons(rand() % pid);
+	th->th_off = TCP_HLEN;
 	th->th_flags = TH_SYN;
-	th->th_sum = 0;
 	th->th_win = 4;
-
-	th->th_sum = cksum(buffer, bufsize);
+	th->th_sum = tcp_cksum(src_sockaddr, dst_sockaddr, th);
 
 	number_of_bytes_sent = sendto(sockfd, buffer, bufsize, 0,
-		(struct sockaddr *)target_addr, sizeof(struct sockaddr_in));
+		(struct sockaddr *)dst_sockaddr, sizeof(struct sockaddr_in));
 	if (number_of_bytes_sent < 0)
 		return 1;
 	if (debugging)
-		printf("successfully sent %lu bytes of raw_tcp.\n", number_of_bytes_sent);
+		printf("successfully sent %lu bytes.\n", number_of_bytes_sent);
 	return 0;
 }
 
@@ -338,7 +452,7 @@ const struct scan_mode scan_modes[] =
 	{"XMAS", SCAN_XMAS},
 	{"ACK", SCAN_ACK},
 	{"UDP", SCAN_UDP}
-*/	{"SYN", SCAN_SYN, nmap_syn_encode_and_send}
+*/	{"SYN", SCAN_SYN, syn_encode_and_send}
 };
 
 void
@@ -346,7 +460,7 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 {
 	printf("Scan configurations\n");
 	printf("Target IP-Address : %s\n",
-		inet_ntoa(nmap->target_addr.sin_addr));
+		inet_ntoa(nmap->dst_sockaddr.sin_addr));
 	printf("No of ports to scan : %d\n", ports);
 	printf("Scans to be performed :");
 	for (int i = 0; i < MAXSCANS; ++i)
@@ -356,10 +470,11 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 	}
 	printf("\n");
 	printf("No of threads : %d\n", threads);
+	printf("\n");
 }
 
 int
-nmap_set_target_addr(struct nmap_data *nmap, const char *hostname)
+set_sockaddr(struct sockaddr_in *sockaddr, const char *hostname)
 {
 	int s;
 	struct addrinfo hints, *res;
@@ -373,9 +488,21 @@ nmap_set_target_addr(struct nmap_data *nmap, const char *hostname)
 		fprintf(stderr, "ft_nmap: failed to resolve \"%s\": %s\n", hostname, gai_strerror(s));
 		return 1;
 	}
-	memcpy(&nmap->target_addr, res->ai_addr, res->ai_addrlen);
+	memcpy(sockaddr, res->ai_addr, res->ai_addrlen);
 	freeaddrinfo(res);
 	return 0;
+}
+
+int
+nmap_set_dst_sockaddr(struct nmap_data *nmap, const char *hostname)
+{
+	return set_sockaddr(&nmap->dst_sockaddr, hostname);
+}
+
+int
+nmap_set_src_sockaddr(struct nmap_data *nmap, const char *hostname)
+{
+	return set_sockaddr(&nmap->src_sockaddr, hostname);
 }
 
 int
@@ -385,9 +512,10 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 	size_t bufsize;
 	int sockfd;
 	struct protoent *proto;
+	int ttl;
 
-	bufsize = sizeof(struct tcphdr) + DATALEN;
-	printf("bufsize=%ld\n", bufsize);
+	//bufsize = sizeof(struct tcphdr) + sizeof(struct ip);
+	bufsize = sizeof(struct tcphdr);
 	buffer = malloc(bufsize);
 	if (buffer == NULL)
 		nmap_print_error_and_exit("buffer malloc failed.");
@@ -399,16 +527,27 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 		return 1;
 	}
 	sockfd = socket(AF_INET, SOCK_RAW, proto->p_proto);
+//	sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 	if (sockfd < 0)
 	{
 		perror("socket");
 		return 1;
 	}
 
+	ttl = 0;
+	if (ttl)
+	{
+		if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0)
+			error(0, errno, "setsockopt");
+	}
+
 	for (int i = 0; i < MAXSCANS; ++i)
 	{
 		if (scan_modes[i].flag & scan_type)
-			scan_modes[i].encode_and_send(buffer, bufsize, &nmap->target_addr, ports[0], sockfd);
+			scan_modes[i].encode_and_send(
+				buffer, bufsize,
+				&nmap->src_sockaddr, &nmap->dst_sockaddr,
+				ports[0], sockfd);
 	}
 	close(sockfd);
 	free(buffer);
@@ -418,7 +557,7 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 void
 nmap_run(struct nmap_data *nmap, const char *hostname)
 {
-	if (nmap_set_target_addr(nmap, hostname))
+	if (nmap_set_dst_sockaddr(nmap, hostname))
 		exit(EXIT_FAILURE);
 	nmap_print_scan_config(nmap, number_of_ports, scan_type, number_of_threads);
 
@@ -628,6 +767,7 @@ main(int argc, char **argv)
 	pcap_t *pcap_handle;
 	struct nmap_data *nmap;
 	int arg_index;
+	char myhostname[HOST_NAME_MAX + 1];
 
 	if (nmap_arg_parse(argc, argv, &arg_index))
 		nmap_print_error_and_exit("arg_parse failed.");
@@ -646,8 +786,15 @@ main(int argc, char **argv)
 	if (!scan_type)
 		scan_type = SCAN_ALL;
 
+	if (gethostname(myhostname, HOST_NAME_MAX))
+		nmap_print_error_and_exit(strerror(errno));
+
+	if (nmap_set_src_sockaddr(nmap, myhostname))
+		exit(EXIT_FAILURE);
+
 	nmap_run(nmap, source);
 	printf("\n");
+
 	while (1)
 		recv_packet(pcap_handle);
 

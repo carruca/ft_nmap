@@ -31,11 +31,21 @@
 # define SCAN_UDP   0x0020
 # define SCAN_ALL   0x003F
 
+struct nmap_data
+{
+	struct sockaddr_in dst_sockaddr;
+	struct sockaddr_in src_sockaddr;
+	pid_t id;
+};
+
 struct scan_mode
 {
   const char *name;
   short flag;
-  int (*encode_and_send)(char *, size_t, struct sockaddr_in *, short, int);
+  int (*encode_and_send)(
+    char *, size_t,
+    struct sockaddr_in *, struct sockaddr_in *,
+    short, int);
 };
 
 enum e_port_state
