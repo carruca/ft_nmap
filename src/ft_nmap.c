@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <netinet/tcp.h>
+#include <ifaddrs.h>
 
 
 #define MAXIPHDRLEN					20
@@ -94,9 +95,9 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 
 		printf("\nIP header\n");
 		printf("   Version              : %d\n", (unsigned int)ip->version);
-		printf("   Header Lenght        : %d Bytes\n", ((unsigned int)ip_hlen));
+		printf("   Header Lenght        : %d bytes\n", ((unsigned int)ip_hlen));
 		printf("   Type of Service      : %d\n", (unsigned int)ip->tos);
-		printf("   Total length         : %d Bytes\n", ntohs(ip->tot_len));
+		printf("   Total length         : %d bytes\n", ntohs(ip->tot_len));
 		printf("   Identification       : %d\n", ntohs(ip->id));
 		printf("   Time-To-Live         : %d\n", (unsigned int)(ip->ttl));
 		printf("   Protocol             : %d\n", (unsigned int)(ip->protocol));
@@ -110,8 +111,9 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 			case IPPROTO_ICMP:
 				icmp = (struct icmp *)bytes;
 				printf("\nICMP header\n");
-				printf("Type:%d Code:%d Seq:%d\n",
-					icmp->icmp_type, icmp->icmp_code, ntohs(icmp->icmp_seq));
+				printf("   Type                 : %d\n", icmp->icmp_type);
+				printf("   Code                 : %d\n", icmp->icmp_code);
+				printf("   Seq                  : %d\n", icmp->icmp_seq);
 				break;
 
 			case IPPROTO_TCP:
@@ -123,7 +125,7 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 				printf("   Destination port     : %u\n", ntohs(th->dest));
 				printf("   Sequence number      : %u\n", ntohl(th->seq));
 				printf("   Ack number           : %u\n", ntohl(th->ack_seq));
-				printf("   Header length        : %u Bytes\n", (unsigned int)th->doff*4);
+				printf("   Header length        : %u bytes\n", (unsigned int)th->doff*4);
 				printf("   URG                  : %u\n", (unsigned int)th->urg);
 				printf("   ACK                  : %u\n", (unsigned int)th->ack);
 				printf("   PSH                  : %u\n", (unsigned int)th->psh);
@@ -136,74 +138,10 @@ print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
 				break;
 
 			default:
-				printf("Protocol is %d\n", ip->protocol);
+				printf("   Protocol             : %d\n", ip->protocol);
 		}
 	}
   printf("\n");
-}
-
-void
-print_packet_info2(const struct pcap_pkthdr *header, const u_char *bytes)
-{
-	uint16_t ether_type;
-	struct ip *ip;
-	unsigned int ip_hlen;
-	struct icmp *icmp;
-	struct tcphdr *tcphdr;
-
-	++number_of_packets;
-	printf("Grabbed packet of lenght: %d\n", header->len);
-	printf("Total number of packets: %d\n", number_of_packets);
-	printf("Recieved at .... %s", ctime((const time_t*)&header->ts.tv_sec));
-
-	ether_type = handle_ethernet(bytes);
-	if (ether_type == ETHERTYPE_IP)
-	{
-		bytes += ETH_HLEN;
-		ip = (struct ip *)bytes;
-		
-		printf("Time To Live: %d\n", ip->ip_ttl);
-		printf("IP src: %s\n", inet_ntoa(ip->ip_src));
-		printf("IP dst: %s\n", inet_ntoa(ip->ip_dst));
-
-		ip_hlen = ip->ip_hl << 2;
-		bytes += ip_hlen;
-		switch(ip->ip_p)
-		{
-			case IPPROTO_ICMP:
-				icmp = (struct icmp *)bytes;
-				printf("Protocol: ICMP\n");
-				printf("Type:%d Code:%d Seq:%d\n",
-					icmp->icmp_type, icmp->icmp_code, ntohs(icmp->icmp_seq));
-				break;
-
-			case IPPROTO_TCP:
-				tcphdr = (struct tcphdr *)bytes;
-				printf("Protocol: TCP\n");
-				printf("Ports: %d -> %d\n",
-					ntohs(tcphdr->th_sport),
-					ntohs(tcphdr->th_dport));
-				printf("Flags:%s%s%s%s%s Seq:0x%x Ack:0x%x Off:%d Sum:%d Win:%d\n",
-					(tcphdr->th_flags & TH_URG ? "URG" : "*"),
-					(tcphdr->th_flags & TH_ACK ? "ACK" : "*"),
-					(tcphdr->th_flags & TH_PUSH ? "PUSH" : "*"),
-					(tcphdr->th_flags & TH_RST ? "RST" : "*"),
-					(tcphdr->th_flags & TH_SYN ? "SYN" : "*"),
-					ntohs(tcphdr->th_seq), ntohs(tcphdr->th_ack),
-					tcphdr->th_off, tcphdr->th_sum, tcphdr->th_win);
-				break;
-
-			case IPPROTO_UDP:
-				printf("Protocol: UDP\n");
-				break;
-
-			default:
-				printf("Protocol: Unknown\n");
-				break;
-		}
-	}
-	else printf("Not IP Adrress\n");
-	printf("\n");
 }
 
 void
@@ -358,9 +296,9 @@ struct pseudo_header
 	unsigned long src_addr;
 	unsigned long dst_addr;
 	char zero;
-	unsigned char protocol;
-	unsigned long tcp_length;
-
+	unsigned char proto;
+	unsigned long th_len;
+	struct tcphdr th;
 };
 
 unsigned short
@@ -370,33 +308,17 @@ tcp_cksum(
 	const struct tcphdr *th)
 {
   struct pseudo_header psh;
-  unsigned int sum = 0;
-  size_t th_len = sizeof(struct tcphdr);
-  struct in_addr inp;
+  size_t th_len;
 
-	inet_aton("172.28.183.109", &inp);
-	(void)src_sockaddr;
-//  psh.src_addr = src_sockaddr->sin_addr.s_addr;
-  psh.src_addr = inp.s_addr;
+  th_len = sizeof(struct tcphdr);
+	psh.src_addr = src_sockaddr->sin_addr.s_addr;
   psh.dst_addr = dst_sockaddr->sin_addr.s_addr;
   psh.zero = 0;
-	psh.protocol = IPPROTO_TCP;
-	psh.tcp_length = htons(th_len);
+	psh.proto = IPPROTO_TCP;
+	psh.th_len = htons(th_len);
+	memcpy(&psh.th, th, th_len);
 
-	const unsigned short *ptr = (const unsigned short *)&psh;
-	for (size_t i = 0; i < sizeof(struct pseudo_header) / 2; ++i)
-		sum += *ptr++;
-
-	ptr = (const unsigned short *)th;
-	size_t tcp_header_words = sizeof(struct tcphdr) / 2;
-
-	for (size_t i = 0; i < tcp_header_words; ++i)
-		sum += *ptr++;
-
-	while (sum >> 16)
-		sum = (sum & 0xFFFF) + (sum >> 16);
-
-	return (unsigned short)(~sum);
+	return cksum((char *)&psh, sizeof(struct pseudo_header));
 }
 
 int
@@ -406,27 +328,11 @@ syn_encode_and_send(
 	struct sockaddr_in *dst_sockaddr,
 	short port, int sockfd)
 {
-//	struct ip *ip;
 	struct tcphdr *th;
 	ssize_t number_of_bytes_sent;
 	pid_t pid = getpid();
 
 	memset(buffer, 0, bufsize);
-/*
-	ip = (struct ip *)buffer;
-	ip->ip_hl = IP_HLEN;
-	ip->ip_v = IPV4;
-	ip->ip_len = htons(bufsize);
-	ip->ip_id = htons(rand() % 65535);
-	ip->ip_ttl = 64;
-	ip->ip_p = IPPROTO_TCP;
-//	ip->ip_src = src_sockaddr->sin_addr;
-	inet_aton("172.28.183.109", &ip->ip_src);
-	ip->ip_dst = dst_sockaddr->sin_addr;
-
-	ip->ip_sum = cksum(buffer, ip->ip_len >> 1);
-*/
-//	th = (struct tcphdr *)(buffer + sizeof(struct ip));
 	th = (struct tcphdr *)buffer;
 	th->th_sport = htons(rand() % 65535);
 	th->th_dport = htons(port);
@@ -474,10 +380,10 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 }
 
 int
-set_sockaddr(struct sockaddr_in *sockaddr, const char *hostname)
+set_sockaddr_by_hostname(struct sockaddr_in *sockaddr, const char *hostname)
 {
-	int s;
 	struct addrinfo hints, *res;
+	int s;
 
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_INET;
@@ -496,13 +402,41 @@ set_sockaddr(struct sockaddr_in *sockaddr, const char *hostname)
 int
 nmap_set_dst_sockaddr(struct nmap_data *nmap, const char *hostname)
 {
-	return set_sockaddr(&nmap->dst_sockaddr, hostname);
+	return set_sockaddr_by_hostname(&nmap->dst_sockaddr, hostname);
 }
 
 int
-nmap_set_src_sockaddr(struct nmap_data *nmap, const char *hostname)
+set_local_sockaddr(struct sockaddr_in *sockaddr)
 {
-	return set_sockaddr(&nmap->src_sockaddr, hostname);
+	struct ifaddrs *ifaddr, *ifa;
+	int ret;
+
+	ret = 1;
+	if (getifaddrs(&ifaddr) == -1)
+	{
+		perror("getifaddrs");
+		return ret;
+	}
+
+	for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
+	{
+		if (ifa->ifa_addr != NULL
+			&& ifa->ifa_addr->sa_family == AF_INET
+			&& !strcmp(ifa->ifa_name,"eth0"))
+		{
+			memcpy(sockaddr, ifa->ifa_addr, sizeof(struct sockaddr));
+			ret = 0;
+			break;
+		}
+	}
+	freeifaddrs(ifaddr);
+	return ret;
+}
+
+int
+nmap_set_src_sockaddr(struct nmap_data *nmap)
+{
+	return set_local_sockaddr(&nmap->src_sockaddr);
 }
 
 int
@@ -512,9 +446,7 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 	size_t bufsize;
 	int sockfd;
 	struct protoent *proto;
-	int ttl;
 
-	//bufsize = sizeof(struct tcphdr) + sizeof(struct ip);
 	bufsize = sizeof(struct tcphdr);
 	buffer = malloc(bufsize);
 	if (buffer == NULL)
@@ -527,18 +459,10 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 		return 1;
 	}
 	sockfd = socket(AF_INET, SOCK_RAW, proto->p_proto);
-//	sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 	if (sockfd < 0)
 	{
 		perror("socket");
 		return 1;
-	}
-
-	ttl = 0;
-	if (ttl)
-	{
-		if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0)
-			error(0, errno, "setsockopt");
 	}
 
 	for (int i = 0; i < MAXSCANS; ++i)
@@ -767,7 +691,6 @@ main(int argc, char **argv)
 	pcap_t *pcap_handle;
 	struct nmap_data *nmap;
 	int arg_index;
-	char myhostname[HOST_NAME_MAX + 1];
 
 	if (nmap_arg_parse(argc, argv, &arg_index))
 		nmap_print_error_and_exit("arg_parse failed.");
@@ -786,10 +709,7 @@ main(int argc, char **argv)
 	if (!scan_type)
 		scan_type = SCAN_ALL;
 
-	if (gethostname(myhostname, HOST_NAME_MAX))
-		nmap_print_error_and_exit(strerror(errno));
-
-	if (nmap_set_src_sockaddr(nmap, myhostname))
+	if (nmap_set_src_sockaddr(nmap))
 		exit(EXIT_FAILURE);
 
 	nmap_run(nmap, source);
