@@ -40,6 +40,7 @@ char *program_name = NULL;
 unsigned short *ports = NULL;
 char *source = NULL;
 char *filename = NULL;
+int print_all_packet_info = 1;
 
 uint16_t
 handle_ethernet(const u_char *bytes)
@@ -204,13 +205,6 @@ nmap_get_ports(char *expr, unsigned int *number_of_ports)
 	return ports;
 }
 
-void
-print_packet_data(const u_char *pkt_data)
-{
-	(void)pkt_data;
-
-}
-
 int
 print_pkt_header(struct pcap_pkthdr *pkt_header)
 {
@@ -238,28 +232,17 @@ print_pkt_header(struct pcap_pkthdr *pkt_header)
 	return 0;
 }
 
-void
-print_ip_header(struct ip *ip)
-{
-	(void)ip;
-	return ;
-}
-
-void
-print_pkt_data(const u_char *pkt_data)
-{
-	print_ip_header((struct ip *)pkt_data + ETH_HLEN);
-	return ;
-}
-
 int
-recv_packet(pcap_t *handle)
+recv_packet(pcap_t *handle, short scan_type)
 {
+	(void)scan_type;
 	struct pcap_pkthdr *pkt_header;
 //	struct pcap_pkthdr *cpy_pkt_header;
 	const u_char *pkt_data;
 //	const u_char *cpy_pkt_data;
-	
+	unsigned ip_hlen;
+	struct iphdr *ih;
+	struct tcphdr *th;
 
 	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
 	if (pcap_next_ex(handle, &pkt_header, &pkt_data) == PCAP_ERROR)
@@ -268,13 +251,26 @@ recv_packet(pcap_t *handle)
 			pcap_geterr(handle));
 		return 1;
 	}
+	//TODO:
+	// que queremos del paquete
+	//  port
+	//  scan flags
+	//
+	if (print_all_packet_info)
+		print_packet_info(pkt_header, pkt_data);
 
-	print_packet_info(pkt_header, pkt_data);
-	/*
-	if (print_pkt_header(pkt_header))
-		return 1;
-	print_pkt_data(pkt_data);
-	*/
+	pkt_data += ETH_HLEN;
+	ih = (struct iphdr*)pkt_data;
+	ip_hlen = ih->ihl << 2;
+
+	switch(ih->protocol)
+	{
+		case IPPROTO_TCP:
+			th = (struct tcphdr *)(ih + ip_hlen);
+			printf("port source:%d\n", ntohs(th->th_sport));
+			if (ntohs(th->th_sport) != ports[0])
+				printf("port %d is open\n", ports[0]);
+	}
 	return 0;
 }
 
@@ -577,6 +573,7 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 		{"file", required_argument, 0, 'f'},
 		{"speedup", required_argument, 0, 's'},
 		{"scan", required_argument, 0, 'S'},
+		{"print", no_argument, 0, 'x'},
 		{0}
 	};
 
@@ -612,6 +609,9 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 				if (scan_type == 0)
 					nmap_print_error_and_exit("scan type is invalid.");
 				break;
+			case 'x':
+				print_all_packet_info = 1;
+				break;
 			case 'h':
 			default:
 				print_usage_and_exit(program_name);
@@ -629,11 +629,11 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 }
 
 pcap_t *
-nmap_get_pcap_handle()
+nmap_pcap_get_handle()
 {
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
-	size_t number_of_devices;
+	size_t number_of_devs;
 	size_t iface;
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t *pcap_handle;
@@ -662,7 +662,7 @@ nmap_get_pcap_handle()
 	}
 */
 	iface = ETH0;
-	for (dev = alldevs, number_of_devices = 0; number_of_devices < iface - 1; dev = dev->next, ++number_of_devices);
+	for (dev = alldevs, number_of_devs = 0; number_of_devs < iface - 1; dev = dev->next, ++number_of_devs);
 	printf("%s interface opening...\n", dev->name);
 
 	pcap_handle = pcap_open_live(dev->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
@@ -686,6 +686,28 @@ nmap_get_pcap_handle()
 }
 
 int
+nmap_pcap_set_filter(pcap_t *pcap_handle, char *filter_exp)
+{
+	struct bpf_program fp;
+
+	if (pcap_compile(pcap_handle, &fp, filter_exp, 0, 0) == -1)
+	{
+		fprintf(stderr, "Couldn't parse filter %s: %s\n",
+			filter_exp,
+			pcap_geterr(pcap_handle));
+		return 1;
+	}
+	if (pcap_setfilter(pcap_handle, &fp) == -1)
+	{
+		fprintf(stderr, "Couldn't install filter %s: %s\n",
+			filter_exp,
+			pcap_geterr(pcap_handle));
+		return 1;
+	}
+	return 0;
+}
+
+int
 main(int argc, char **argv)
 {
 	pcap_t *pcap_handle;
@@ -695,13 +717,16 @@ main(int argc, char **argv)
 	if (nmap_arg_parse(argc, argv, &arg_index))
 		nmap_print_error_and_exit("arg_parse failed.");
 
-	pcap_handle = nmap_get_pcap_handle();
+	pcap_handle = nmap_pcap_get_handle();
 	if (pcap_handle == NULL)
 		nmap_print_error_and_exit("pcap_handle failed.");
 
 	nmap = nmap_init();
 	if (nmap == NULL)
 		nmap_print_error_and_exit("initialisation failed.");
+
+	if (nmap_pcap_set_filter(pcap_handle, "src port 80"))
+		nmap_print_error_and_exit("pcap_filter failed.");
 
 	if (!number_of_ports)
 		ports = nmap_get_ports(DEFAULT_PORT_RANGE, &number_of_ports);
@@ -716,7 +741,7 @@ main(int argc, char **argv)
 	printf("\n");
 
 	while (1)
-		recv_packet(pcap_handle);
+		recv_packet(pcap_handle, scan_type);
 
 	free(nmap);
 	free(ports);
