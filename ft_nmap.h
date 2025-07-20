@@ -48,7 +48,7 @@ struct scan_mode
     short, int);
 };
 
-enum e_port_state
+enum port_state
 {
   PORT_UNKNOWN,
   PORT_CLOSED,
@@ -58,17 +58,13 @@ enum e_port_state
   PORT_CLOSEDFILTERED
 };
 
-typedef enum e_port_state t_port_state;
-
-struct s_port
+struct port
 {
-  unsigned short port_number;
-  unsigned char port_protocol;
-  unsigned char *port_owner;
-  struct s_port *next;
+  unsigned short portno;
+  unsigned char scan;
+  unsigned char *owner;
+  struct port *next;
 };
-
-typedef struct s_port t_port;
 
 struct s_scan_config
 {

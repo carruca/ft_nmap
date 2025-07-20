@@ -40,7 +40,8 @@ char *program_name = NULL;
 unsigned short *ports = NULL;
 char *source = NULL;
 char *filename = NULL;
-int print_all_packet_info = 1;
+int print_all_packet_info = 0;
+
 
 uint16_t
 handle_ethernet(const u_char *bytes)
@@ -232,6 +233,12 @@ print_pkt_header(struct pcap_pkthdr *pkt_header)
 	return 0;
 }
 
+void
+print_port_result(unsigned int port, char *state, char *service)
+{
+	printf("%-9d %-9s %-s\n", port, state, service);
+}
+
 int
 recv_packet(pcap_t *handle, short scan_type)
 {
@@ -243,6 +250,8 @@ recv_packet(pcap_t *handle, short scan_type)
 	unsigned ip_hlen;
 	struct iphdr *ih;
 	struct tcphdr *th;
+	struct servent *serv;
+	//t_list *openports;
 
 	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
 	if (pcap_next_ex(handle, &pkt_header, &pkt_data) == PCAP_ERROR)
@@ -266,10 +275,17 @@ recv_packet(pcap_t *handle, short scan_type)
 	switch(ih->protocol)
 	{
 		case IPPROTO_TCP:
-			th = (struct tcphdr *)(ih + ip_hlen);
-			printf("port source:%d\n", ntohs(th->th_sport));
-			if (ntohs(th->th_sport) != ports[0])
-				printf("port %d is open\n", ports[0]);
+			th = (struct tcphdr *)(pkt_data + ip_hlen);
+			serv = getservbyport(th->th_sport, "tcp");
+
+			printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
+			for (unsigned int i = 0; i < number_of_ports; ++i)
+			{
+				if (ports[i] == ntohs(th->th_sport))
+					print_port_result(ports[i], "open", (serv) ? serv->s_name : "unknown");
+				else
+					print_port_result(ports[i], "filtered", "unknown");
+			}
 	}
 	return 0;
 }
@@ -610,7 +626,7 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 					nmap_print_error_and_exit("scan type is invalid.");
 				break;
 			case 'x':
-				print_all_packet_info = 1;
+				print_all_packet_info = 0;
 				break;
 			case 'h':
 			default:
