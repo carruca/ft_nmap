@@ -7,10 +7,13 @@ SRCSFILES	= \
 SRCS			= $(addprefix $(SRCSPATH), $(SRCSFILES))
 OBJS			= $(patsubst $(SRCSPATH)%, $(OBJSPATH)%, $(SRCS:.c=.o))
 
+LIBFTPATH	= libft/
+LIBFT			= $(LIBFTPATH)/libft.a
+
 CC      	= gcc
 CFLAGS  	= -Wall -Werror -Wextra
-INC 			= -I.
-LDFLAGS 	= -lm -lpcap
+INC 			= -I. -I$(LIBFTPATH)
+LDFLAGS 	= -lm -lpcap -L $(LIBFTPATH) -lft
 FSANITIZE = -g3 -fsanitize=address -fsanitize=leak -fsanitize=undefined -fsanitize=bounds -fsanitize=null
 
 all: $(NAME)
@@ -19,8 +22,11 @@ $(OBJSPATH)%.o: $(SRCSPATH)%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INC) -c $< -o $@
 
-$(NAME): $(OBJS)
+$(NAME): $(OBJS) $(LIBFT)
 	$(CC) $(OBJS) -o $(NAME) $(LDFLAGS)
+
+$(LIBFT): 
+	$(MAKE) -s -C $(LIBFTPATH)
 
 SILENT += print
 print:
@@ -39,9 +45,11 @@ tag:
 	ctags $(SRCS)
 
 clean:
+	$(MAKE) -s -C $(LIBFTPATH) clean
 	$(RM) $(OBJS)
 
 fclean: clean
+	$(MAKE) -s -C $(LIBFTPATH) fclean
 	$(RM) $(NAME)
 
 re: fclean all

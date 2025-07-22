@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "libft.h"
 #include <pcap.h>
 #include <time.h>
 #include <netinet/if_ether.h>
@@ -32,7 +33,7 @@ int number_of_packets = 0;
 unsigned int number_of_ports = 0;
 unsigned short number_of_threads = 0;
 short scan_type = 0;
-int debugging = 1;
+int debugging = 0;
 extern char *optarg;
 extern int optind;
 extern int errno;
@@ -41,6 +42,7 @@ unsigned short *ports = NULL;
 char *source = NULL;
 char *filename = NULL;
 int print_all_packet_info = 0;
+int stop = 0;
 
 
 uint16_t
@@ -239,6 +241,10 @@ print_port_result(unsigned int port, char *state, char *service)
 	printf("%-9d %-9s %-s\n", port, state, service);
 }
 
+void
+print_result()
+{}
+
 int
 recv_packet(pcap_t *handle, short scan_type)
 {
@@ -251,7 +257,9 @@ recv_packet(pcap_t *handle, short scan_type)
 	struct iphdr *ih;
 	struct tcphdr *th;
 	struct servent *serv;
-	//t_list *openports;
+	t_list *openports;
+
+	(void)openports;
 
 	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
 	if (pcap_next_ex(handle, &pkt_header, &pkt_data) == PCAP_ERROR)
@@ -283,9 +291,8 @@ recv_packet(pcap_t *handle, short scan_type)
 			{
 				if (ports[i] == ntohs(th->th_sport))
 					print_port_result(ports[i], "open", (serv) ? serv->s_name : "unknown");
-				else
-					print_port_result(ports[i], "filtered", "unknown");
 			}
+			stop = 1;
 	}
 	return 0;
 }
@@ -388,6 +395,7 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 	}
 	printf("\n");
 	printf("No of threads : %d\n", threads);
+	printf("Scanning...\n");
 	printf("\n");
 }
 
@@ -491,7 +499,7 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 }
 
 void
-nmap_run(struct nmap_data *nmap, const char *hostname)
+nmap_run(struct nmap_data *nmap, pcap_t *pcap_handle, const char *hostname)
 {
 	if (nmap_set_dst_sockaddr(nmap, hostname))
 		exit(EXIT_FAILURE);
@@ -508,6 +516,8 @@ nmap_run(struct nmap_data *nmap, const char *hostname)
 	// 	estadisticas
 	if (nmap_xmit(nmap, scan_type))
 		exit(EXIT_FAILURE);
+
+	recv_packet(pcap_handle, scan_type);
 }
 
 struct nmap_data *
@@ -753,11 +763,7 @@ main(int argc, char **argv)
 	if (nmap_set_src_sockaddr(nmap))
 		exit(EXIT_FAILURE);
 
-	nmap_run(nmap, source);
-	printf("\n");
-
-	while (1)
-		recv_packet(pcap_handle, scan_type);
+	nmap_run(nmap, pcap_handle, source);
 
 	free(nmap);
 	free(ports);
