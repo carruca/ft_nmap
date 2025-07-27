@@ -33,7 +33,7 @@ int number_of_packets = 0;
 unsigned int number_of_ports = 0;
 unsigned short number_of_threads = 0;
 short scan_technique = 0;
-int debugging = 1;
+int debugging = 0;
 extern char *optarg;
 extern int optind;
 extern int errno;
@@ -326,7 +326,7 @@ recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_
 	FD_ZERO(&fdset);
 	FD_SET(pcap_fd, &fdset);
 
-	timeout.tv_sec = 3;
+	timeout.tv_sec = 2;
 	timeout.tv_usec = 0;
 
 	nfds = select(fdmax, &fdset, NULL, NULL, &timeout);
@@ -350,7 +350,8 @@ recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_
 	}
 	else if (res != 0)
 	{
-		printf("captured %u bytes.\n", pkt_header->caplen);
+		if (debugging)
+			printf("captured %u bytes...\n", pkt_header->caplen);
 		if (print_all_packet_info)
 			print_packet_info(pkt_header, pkt_data);
 
@@ -459,7 +460,7 @@ syn_encode_and_send(
 	if (number_of_bytes_sent < 0)
 		return 1;
 	if (debugging)
-		printf("successfully sent %lu bytes.\n", number_of_bytes_sent);
+		printf("sent %lu bytes...\n", number_of_bytes_sent);
 	return 0;
 }
 
@@ -731,6 +732,7 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 				break;
 			case 'x':
 				print_all_packet_info = 1;
+				debugging = 1;
 				break;
 			case 'h':
 			default:
