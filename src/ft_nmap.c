@@ -32,8 +32,8 @@
 int number_of_packets = 0;
 unsigned int number_of_ports = 0;
 unsigned short number_of_threads = 0;
-short scan_type = 0;
-int debugging = 0;
+short scan_technique = 0;
+int debugging = 1;
 extern char *optarg;
 extern int optind;
 extern int errno;
@@ -235,18 +235,73 @@ print_pkt_header(struct pcap_pkthdr *pkt_header)
 	return 0;
 }
 
-void
-print_port_result(unsigned int port, char *state, char *service)
+const t_port_state port_states[] =
 {
-	printf("%-9d %-9s %-s\n", port, state, service);
+	{"closed", PORT_CLOSED},
+	{"open", PORT_OPEN},
+	{"filtered", PORT_FILTERED},
+	{"unfiltered", PORT_UNFILTERED},
+	{"openfiltered", PORT_OPENFILTERED}
+};
+
+void
+print_port_result(void *port)
+{
+	int i;
+	t_port *tmp;
+
+	tmp = port;
+	for (i = 0; i < MAXSTATES; ++i)
+	{
+		if (port_states[i].option & tmp->state)
+			break ;
+	}
+	printf("%-9d %-9s %-s\n", tmp->portno, port_states[i].name, tmp->service_name);
 }
 
 void
 print_result()
 {}
 
+t_port *
+init_port(
+	unsigned short s_port, unsigned char protocol,
+	short state, struct servent *serv)
+{
+	t_port *port;
+
+	port = malloc(sizeof(*port));
+	if (port == NULL)
+		return NULL;
+
+	memset(port, 0, sizeof(*port));
+	port->portno = s_port;
+	port->proto = protocol;
+	port->state = state;
+	port->service_name = strdup((serv) ? serv->s_name : "Unassigned");
+	if (port->service_name == NULL)
+	{
+		free(port);
+		return NULL;
+	}
+	return port;
+}
+
+void
+free_port(void *port)
+{
+	t_port *tmp;
+
+	if (port)
+	{
+		tmp = port;
+		free(tmp->service_name);
+		free(tmp);
+	}
+}
+
 int
-recv_packet(pcap_t *handle, short scan_type)
+recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_lst)
 {
 	(void)scan_type;
 	struct pcap_pkthdr *pkt_header;
@@ -257,42 +312,80 @@ recv_packet(pcap_t *handle, short scan_type)
 	struct iphdr *ih;
 	struct tcphdr *th;
 	struct servent *serv;
-	t_list *openports;
+	t_port *new_port;
+	int res;
+	fd_set fdset;
+	int fdmax, nfds;
+	int pcap_fd;
+	struct timeval timeout;
 
-	(void)openports;
+	serv = NULL;
+	pcap_fd = pcap_get_selectable_fd(handle);
+
+	fdmax = pcap_fd + 1;
+	FD_ZERO(&fdset);
+	FD_SET(pcap_fd, &fdset);
+
+	timeout.tv_sec = 3;
+	timeout.tv_usec = 0;
+
+	nfds = select(fdmax, &fdset, NULL, NULL, &timeout);
+	if (nfds == -1)
+		error(EXIT_FAILURE, errno, "select");
+	else if (nfds == 0)
+	{
+		new_port = init_port(port, IPPROTO_TCP, PORT_FILTERED, serv);
+		if (new_port)
+			ft_lstadd_back(port_lst, ft_lstnew(new_port));
+		return 0;
+	}
 
 	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
-	if (pcap_next_ex(handle, &pkt_header, &pkt_data) == PCAP_ERROR)
+	res = pcap_next_ex(handle, &pkt_header, &pkt_data);
+	if (res == PCAP_ERROR)
 	{
 		fprintf(stderr, "Couldn't read next packet: %s\n",
 			pcap_geterr(handle));
 		return 1;
 	}
-	//TODO:
-	// que queremos del paquete
-	//  port
-	//  scan flags
-	//
-	if (print_all_packet_info)
-		print_packet_info(pkt_header, pkt_data);
-
-	pkt_data += ETH_HLEN;
-	ih = (struct iphdr*)pkt_data;
-	ip_hlen = ih->ihl << 2;
-
-	switch(ih->protocol)
+	else if (res != 0)
 	{
-		case IPPROTO_TCP:
-			th = (struct tcphdr *)(pkt_data + ip_hlen);
-			serv = getservbyport(th->th_sport, "tcp");
+		printf("captured %u bytes.\n", pkt_header->caplen);
+		if (print_all_packet_info)
+			print_packet_info(pkt_header, pkt_data);
 
-			printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
-			for (unsigned int i = 0; i < number_of_ports; ++i)
-			{
-				if (ports[i] == ntohs(th->th_sport))
-					print_port_result(ports[i], "open", (serv) ? serv->s_name : "unknown");
-			}
-			stop = 1;
+		pkt_data += ETH_HLEN;
+		ih = (struct iphdr*)pkt_data;
+		ip_hlen = ih->ihl << 2;
+
+		switch(ih->protocol)
+		{
+			case IPPROTO_TCP:
+				th = (struct tcphdr *)(pkt_data + ip_hlen);
+				serv = getservbyport(th->th_sport, "tcp");
+
+				if (port == ntohs(th->th_sport))
+				{
+					if (th->th_flags & TH_SYN && th->th_flags & TH_ACK)
+					{
+						new_port = init_port(port, IPPROTO_TCP, PORT_OPEN, serv);
+						if (new_port)
+							ft_lstadd_back(port_lst, ft_lstnew(new_port));
+					}
+					else if (th->th_flags & TH_RST)
+					{
+						new_port = init_port(port, IPPROTO_TCP, PORT_CLOSED, serv);
+						if (new_port)
+							ft_lstadd_back(port_lst, ft_lstnew(new_port));
+					}
+				}
+		}
+	}
+	else
+	{
+		new_port = init_port(port, IPPROTO_TCP, PORT_FILTERED, serv);
+		if (new_port)
+			ft_lstadd_back(port_lst, ft_lstnew(new_port));
 	}
 	return 0;
 }
@@ -390,7 +483,7 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 	printf("Scans to be performed :");
 	for (int i = 0; i < MAXSCANS; ++i)
 	{
-		if (scan_modes[i].flag & scan_mode)
+		if (scan_modes[i].option & scan_mode)
 			printf(" %s", scan_modes[i].name);
 	}
 	printf("\n");
@@ -460,7 +553,7 @@ nmap_set_src_sockaddr(struct nmap_data *nmap)
 }
 
 int
-nmap_xmit(struct nmap_data *nmap, short scan_type)
+nmap_xmit(struct nmap_data *nmap, short scan_type, unsigned short port)
 {
 	char *buffer;
 	size_t bufsize;
@@ -487,11 +580,11 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 
 	for (int i = 0; i < MAXSCANS; ++i)
 	{
-		if (scan_modes[i].flag & scan_type)
+		if (scan_modes[i].option & scan_type)
 			scan_modes[i].encode_and_send(
 				buffer, bufsize,
 				&nmap->src_sockaddr, &nmap->dst_sockaddr,
-				ports[0], sockfd);
+				port, sockfd);
 	}
 	close(sockfd);
 	free(buffer);
@@ -501,23 +594,24 @@ nmap_xmit(struct nmap_data *nmap, short scan_type)
 void
 nmap_run(struct nmap_data *nmap, pcap_t *pcap_handle, const char *hostname)
 {
+	t_list *port_lst;
+
+	port_lst = NULL;
 	if (nmap_set_dst_sockaddr(nmap, hostname))
 		exit(EXIT_FAILURE);
-	nmap_print_scan_config(nmap, number_of_ports, scan_type, number_of_threads);
+	nmap_print_scan_config(nmap, number_of_ports, scan_technique, number_of_threads);
 
-	// TODO: run
-	// xmit
-	// 	bucle de puertos
-	// 	bucle de tipos de escaneo
-	// recv
-	// 	pcap_next_ex
-	// 	analizar mensaje recibido y guardar estadisticas
-	// print
-	// 	estadisticas
-	if (nmap_xmit(nmap, scan_type))
-		exit(EXIT_FAILURE);
+	for (unsigned short i = 0; i < number_of_ports; ++i)
+	{
+		if (nmap_xmit(nmap, scan_technique, ports[i]))
+			exit(EXIT_FAILURE);
 
-	recv_packet(pcap_handle, scan_type);
+		recv_packet(pcap_handle, scan_technique, ports[i], &port_lst);
+	}
+
+	ft_lstiter(port_lst, print_port_result);
+	if (port_lst)
+		ft_lstclear(&port_lst, free_port);
 }
 
 struct nmap_data *
@@ -577,12 +671,12 @@ get_program_name(char *arg)
 }
 
 short
-nmap_get_scan_type_by_name(char *expr)
+nmap_get_scan_technique_by_name(char *expr)
 {
 	for (int i = 0; i < MAXSCANS; ++i)
 	{
 		if (strcmp(scan_modes[i].name, expr) == 0)
-			return scan_modes[i].flag;
+			return scan_modes[i].option;
 	}
 	return 0;
 }
@@ -608,7 +702,7 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 	if (argc < 2)
 		print_usage_and_exit(program_name);
 
-	while ((opt = getopt_long(argc, argv, "hp:i:f:", long_options, NULL)) != -1)
+	while ((opt = getopt_long(argc, argv, "hxp:i:f:", long_options, NULL)) != -1)
 	{
 		switch (opt)
 		{
@@ -631,12 +725,12 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 					nmap_print_error_and_exit("speedup exceeded.");
 				break;
 			case 'S':
-				scan_type = nmap_get_scan_type_by_name(optarg);
-				if (scan_type == 0)
+				scan_technique = nmap_get_scan_technique_by_name(optarg);
+				if (scan_technique == 0)
 					nmap_print_error_and_exit("scan type is invalid.");
 				break;
 			case 'x':
-				print_all_packet_info = 0;
+				print_all_packet_info = 1;
 				break;
 			case 'h':
 			default:
@@ -691,13 +785,55 @@ nmap_pcap_get_handle()
 	for (dev = alldevs, number_of_devs = 0; number_of_devs < iface - 1; dev = dev->next, ++number_of_devs);
 	printf("%s interface opening...\n", dev->name);
 
-	pcap_handle = pcap_open_live(dev->name, BUFSIZ, PROMISC_TRUE, 1000, errbuf);
+	pcap_handle = pcap_create(dev->name, errbuf);
 	if (pcap_handle == NULL)
 	{
 		fprintf(stderr, "Couldn't open device %s: %s\n",
 			dev->name,
 			errbuf);
-		return NULL;
+		exit(EXIT_FAILURE);
+	}
+
+	if (pcap_set_buffer_size(pcap_handle, BUFSIZ) != 0)
+	{
+		fprintf(stderr, "Couldn't set buffer size: %s\n",
+			pcap_geterr(pcap_handle));
+		exit(EXIT_FAILURE);
+	}
+
+	if (pcap_set_promisc(pcap_handle, PROMISC_TRUE) != 0)
+	{
+		fprintf(stderr, "Couldn't set promiscuous mode: %s\n",
+			pcap_geterr(pcap_handle));
+		exit(EXIT_FAILURE);
+	}
+
+	if (pcap_set_timeout(pcap_handle, 1000) != 0)
+	{
+		fprintf(stderr, "Couldn't set packet buffer timeout: %s\n",
+			pcap_geterr(pcap_handle));
+		exit(EXIT_FAILURE);
+	}
+/*
+	if (pcap_set_immediate_mode(pcap_handle, 1) != 0)
+	{
+		fprintf(stderr, "Couldn't set immediate mode: %s\n",
+			pcap_geterr(pcap_handle));
+		exit(EXIT_FAILURE);
+	}
+*/
+	if (pcap_setnonblock(pcap_handle, 1, errbuf) == PCAP_ERROR)
+	{
+		fprintf(stderr, "Couldn't set non-blocking mode: %s\n",
+			errbuf);
+		exit(EXIT_FAILURE);
+	}
+
+	if (pcap_activate(pcap_handle) != 0)
+	{
+		fprintf(stderr, "Couldn't activate handle: %s\n",
+			pcap_geterr(pcap_handle));
+		exit(EXIT_FAILURE);
 	}
 
 	if (pcap_datalink(pcap_handle) != DLT_EN10MB)
@@ -730,15 +866,16 @@ nmap_pcap_set_filter(pcap_t *pcap_handle, char *filter_exp)
 			pcap_geterr(pcap_handle));
 		return 1;
 	}
+	pcap_freecode(&fp);
 	return 0;
 }
 
 int
 main(int argc, char **argv)
 {
+	int arg_index;
 	pcap_t *pcap_handle;
 	struct nmap_data *nmap;
-	int arg_index;
 
 	if (nmap_arg_parse(argc, argv, &arg_index))
 		nmap_print_error_and_exit("arg_parse failed.");
@@ -757,8 +894,8 @@ main(int argc, char **argv)
 	if (!number_of_ports)
 		ports = nmap_get_ports(DEFAULT_PORT_RANGE, &number_of_ports);
 
-	if (!scan_type)
-		scan_type = SCAN_ALL;
+	if (!scan_technique)
+		scan_technique = SCAN_ALL;
 
 	if (nmap_set_src_sockaddr(nmap))
 		exit(EXIT_FAILURE);
