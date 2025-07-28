@@ -44,6 +44,16 @@ char *filename = NULL;
 int print_all_packet_info = 0;
 int stop = 0;
 
+void
+tvsub(struct timeval *out, struct timeval *in)
+{
+	if ((out->tv_usec -= in->tv_usec) < 0)
+	{
+		--out->tv_sec;
+		out->tv_usec += 1000000;
+	}
+	out->tv_sec -= in->tv_sec;
+}
 
 uint16_t
 handle_ethernet(const u_char *bytes)
@@ -156,7 +166,8 @@ nmap_print_error_and_exit(char *error)
 }
 
 unsigned short *
-nmap_get_ports(char *expr, unsigned int *number_of_ports)
+//nmap_get_ports(char *expr, unsigned int *number_of_ports)
+get_ports(char *expr, unsigned int *number_of_ports)
 {
 	unsigned short *ports;
 	int count, start, end;
@@ -165,7 +176,7 @@ nmap_get_ports(char *expr, unsigned int *number_of_ports)
 
 	ports = malloc(MAXPORTS * sizeof(unsigned short));
 	if (ports == NULL)
-		nmap_print_error_and_exit("get_ports: malloc failed.");
+		return NULL;
 
 	memset(checks, 0, MAXPORTS + 1);
 	count = 0;
@@ -260,8 +271,14 @@ print_port_result(void *port)
 }
 
 void
-print_result()
-{}
+nmap_print_result(struct nmap_data *nmap, t_list *port_lst, double scantime)
+{
+	printf("Scan took %.2f secs\n", scantime);
+	printf("IP address: %s\n",
+		inet_ntoa(nmap->dst_sockaddr.sin_addr));
+	printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
+	ft_lstiter(port_lst, print_port_result);
+}
 
 t_port *
 init_port(
@@ -301,7 +318,8 @@ free_port(void *port)
 }
 
 int
-recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_lst)
+//recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_lst)
+recv_packet(pcap_t *handle, short scan_type, t_list **port_lst)
 {
 	(void)scan_type;
 	struct pcap_pkthdr *pkt_header;
@@ -314,14 +332,17 @@ recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_
 	struct servent *serv;
 	t_port *new_port;
 	int res;
+	unsigned short port;
+
 	fd_set fdset;
 	int fdmax, nfds;
 	int pcap_fd;
 	struct timeval timeout;
 
+//	serv = getservbyport(htons(port), "tcp");
 	serv = NULL;
-	pcap_fd = pcap_get_selectable_fd(handle);
 
+	pcap_fd = pcap_get_selectable_fd(handle);
 	fdmax = pcap_fd + 1;
 	FD_ZERO(&fdset);
 	FD_SET(pcap_fd, &fdset);
@@ -334,10 +355,10 @@ recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_
 		error(EXIT_FAILURE, errno, "select");
 	else if (nfds == 0)
 	{
-		new_port = init_port(port, IPPROTO_TCP, PORT_FILTERED, serv);
+/*		new_port = init_port(port, IPPROTO_TCP, PORT_FILTERED, serv);
 		if (new_port)
 			ft_lstadd_back(port_lst, ft_lstnew(new_port));
-		return 0;
+	*/	return 0;
 	}
 
 	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
@@ -363,6 +384,7 @@ recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_
 		{
 			case IPPROTO_TCP:
 				th = (struct tcphdr *)(pkt_data + ip_hlen);
+				port = ntohs(th->th_sport);
 				serv = getservbyport(th->th_sport, "tcp");
 
 				if (port == ntohs(th->th_sport))
@@ -383,12 +405,62 @@ recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_
 		}
 	}
 	else
-	{
+	{/*
 		new_port = init_port(port, IPPROTO_TCP, PORT_FILTERED, serv);
 		if (new_port)
 			ft_lstadd_back(port_lst, ft_lstnew(new_port));
+*/	}
+	return 0;
+}
+
+int
+update_probe(t_scan_engine *engine, t_probe *probe, unsigned short sport,
+	const struct pcap_pkthdr *pkt_header, struct tcphdr *th)
+{
+	if (probe->port == sport && probe->outstanding)
+	{
+		if (th->th_flags & TH_SYN && th->th_flags & TH_ACK)
+			probe->state = PORT_OPEN;
+		else if (th->th_flags & TH_RST)
+			probe->state = PORT_CLOSED;
+
+		probe->outstanding = 0;
+		probe->recv_time = pkt_header->ts;
+		--engine->outstanding_probes;
+		++engine->completed_probes;
+		return 1;
 	}
 	return 0;
+}
+
+void
+process_response(t_scan_engine *engine,
+	const struct pcap_pkthdr *pkt_header, const u_char *pkt_data)
+{
+	unsigned short sport;
+	unsigned int ip_hlen;
+	struct iphdr *ih;
+	struct tcphdr *th;
+	t_list *current_node;
+
+	pkt_data += ETH_HLEN;
+	ih = (struct iphdr*)pkt_data;
+	ip_hlen = ih->ihl << 2;
+
+	switch(ih->protocol)
+	{
+		case IPPROTO_TCP:
+			th = (struct tcphdr *)(pkt_data + ip_hlen);
+			sport = ntohs(th->th_sport);
+	}
+
+	current_node = engine->probe_list;
+	while (current_node)
+	{
+		if (update_probe(engine, current_node->content, sport, pkt_header, th))
+			break;
+		current_node = current_node->next;
+	}
 }
 
 unsigned short
@@ -484,11 +556,30 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 	printf("Scans to be performed :");
 	for (int i = 0; i < MAXSCANS; ++i)
 	{
-		if (scan_modes[i].option & scan_mode)
+		if (scan_modes[i].flag & scan_mode)
 			printf(" %s", scan_modes[i].name);
 	}
 	printf("\n");
 	printf("No of threads : %d\n", threads);
+	printf("Scanning...\n");
+	printf("\n");
+}
+
+void
+print_scan_config(const t_scan_engine *engine, const t_scan_options *opts, int num_ports)
+{
+	printf("Scan configurations\n");
+	printf("Target IP-Address : %s\n",
+		inet_ntoa(engine->target.sin_addr));
+	printf("No of ports to scan : %d\n", num_ports);
+	printf("Scans to be performed :");
+	for (int pos = 0; pos < MAXSCANS; ++pos)
+	{
+		if (scan_modes[pos].flag & opts->scan_flag)
+			printf(" %s", scan_modes[pos].name);
+	}
+	printf("\n");
+//	printf("No of threads : %d\n", threads);
 	printf("Scanning...\n");
 	printf("\n");
 }
@@ -523,13 +614,11 @@ int
 set_local_sockaddr(struct sockaddr_in *sockaddr)
 {
 	struct ifaddrs *ifaddr, *ifa;
-	int ret;
 
-	ret = 1;
 	if (getifaddrs(&ifaddr) == -1)
 	{
 		perror("getifaddrs");
-		return ret;
+		return 1;
 	}
 
 	for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
@@ -539,16 +628,15 @@ set_local_sockaddr(struct sockaddr_in *sockaddr)
 			&& !strcmp(ifa->ifa_name,"eth0"))
 		{
 			memcpy(sockaddr, ifa->ifa_addr, sizeof(struct sockaddr));
-			ret = 0;
 			break;
 		}
 	}
 	freeifaddrs(ifaddr);
-	return ret;
+	return 0;
 }
 
 int
-nmap_set_src_sockaddr(struct nmap_data *nmap)
+nmap_set_source_sockaddr(struct nmap_data *nmap)
 {
 	return set_local_sockaddr(&nmap->src_sockaddr);
 }
@@ -581,7 +669,7 @@ nmap_xmit(struct nmap_data *nmap, short scan_type, unsigned short port)
 
 	for (int i = 0; i < MAXSCANS; ++i)
 	{
-		if (scan_modes[i].option & scan_type)
+		if (scan_modes[i].flag & scan_type)
 			scan_modes[i].encode_and_send(
 				buffer, bufsize,
 				&nmap->src_sockaddr, &nmap->dst_sockaddr,
@@ -592,29 +680,190 @@ nmap_xmit(struct nmap_data *nmap, short scan_type, unsigned short port)
 	return 0;
 }
 
+int
+send_syn_probe(t_scan_engine *engine, t_scan_options *opts, t_probe *probe)
+{
+	int raw_socket;
+	ssize_t bytes_sent;
+	struct protoent *proto;
+	struct tcphdr *th;
+	char packet[sizeof(struct tcphdr)];
+
+	proto = getprotobyname("tcp");
+	if (proto == NULL)
+	{
+		perror("getprotobyname");
+		return 1;
+	}
+	raw_socket = socket(AF_INET, SOCK_RAW, proto->p_proto);
+	if (raw_socket < 0)
+	{
+		perror("socket");
+		return 1;
+	}
+
+	memset(packet, 0, sizeof(packet));
+
+	th = (struct tcphdr *)packet;
+	th->th_sport = htons(rand() % 65535);
+	th->th_dport = htons(probe->port);
+	th->th_seq = htons(rand() % getpid());
+	th->th_off = TCP_HLEN;
+	th->th_flags = TH_SYN;
+	th->th_win = htons(1024);
+	th->th_sum = tcp_cksum(&engine->source, &engine->target, th);
+
+	bytes_sent = sendto(raw_socket, packet, sizeof(packet), 0,
+		(struct sockaddr *)&engine->target, sizeof(struct sockaddr_in));
+	if (bytes_sent > 0)
+	{
+		if (gettimeofday(&probe->sent_time, NULL) < 0)
+			error(EXIT_FAILURE, errno, "gettimeofday");
+		probe->outstanding = 1;
+		probe->state = PORT_TESTING;
+		++engine->outstanding_probes;
+
+		if (opts->debugging)
+			printf("probe of %lu bytes sent to port %u (outstanding: %u)\n",
+				bytes_sent, probe->port, engine->outstanding_probes);
+
+		return 0;
+	}
+	return 1;
+}
+
 void
 nmap_run(struct nmap_data *nmap, pcap_t *pcap_handle, const char *hostname)
 {
 	t_list *port_lst;
+	struct timeval tv_in, tv_out;
+	double scantime;
 
 	port_lst = NULL;
+	memset(&tv_in, 0, sizeof(struct timeval));
+
 	if (nmap_set_dst_sockaddr(nmap, hostname))
 		exit(EXIT_FAILURE);
 	nmap_print_scan_config(nmap, number_of_ports, scan_technique, number_of_threads);
+
+	if (gettimeofday(&tv_in, NULL) < 0)
+		error(EXIT_FAILURE, errno, "gettimeofday");
 
 	for (unsigned short i = 0; i < number_of_ports; ++i)
 	{
 		if (nmap_xmit(nmap, scan_technique, ports[i]))
 			exit(EXIT_FAILURE);
-
-		recv_packet(pcap_handle, scan_technique, ports[i], &port_lst);
 	}
+	//recv_packet(pcap_handle, scan_technique, ports[i], &port_lst);
+	recv_packet(pcap_handle, scan_technique, &port_lst);
 
-	ft_lstiter(port_lst, print_port_result);
+	if (gettimeofday(&tv_out, NULL) < 0)
+		error(EXIT_FAILURE, errno, "gettimeofday");
+	tvsub(&tv_out, &tv_in);
+	scantime = ((double)tv_out.tv_sec) +
+		((double)tv_out.tv_usec) / 1000000.0;
+
+	nmap_print_result(nmap, port_lst, scantime);
 	if (port_lst)
 		ft_lstclear(&port_lst, free_port);
 }
 
+void
+send_probe_list(t_scan_engine *engine, t_scan_options *opts)
+{
+	t_list *current_node;
+	t_probe *probe;
+
+	current_node = engine->probe_list;
+
+	while (current_node
+		&& engine->outstanding_probes < engine->max_outstanding)
+	{
+		probe = current_node->content;
+		if (probe->state == PORT_UNKNOWN)
+		{
+			if (send_syn_probe(engine, opts, probe) == 0)
+				current_node = current_node->next;
+			else
+				break;
+		}
+		else
+			current_node = current_node->next;
+	}
+}
+
+void
+scan_ports(
+	t_scan_engine *engine, t_scan_options *opts,
+	unsigned short *ports, int num_ports)
+{
+	struct timeval scan_start, current_time, timeout;
+	double total_time;
+	struct pcap_pkthdr *pkt_header;
+	const u_char *pkt_data;
+	fd_set fdset;
+	int pcap_fd;
+
+	(void)ports;
+	if (gettimeofday(&scan_start, NULL) < 0)
+		error(EXIT_FAILURE, errno, "gettimeofday");
+
+	if (set_sockaddr_by_hostname(&engine->target, opts->target))
+		exit(EXIT_FAILURE);
+	print_scan_config(engine, opts, num_ports);
+
+
+//	while (engine->completed_probes < engine->total_probes)
+	{
+		send_probe_list(engine, opts);
+
+		pcap_fd = pcap_get_selectable_fd(engine->pcap_handle);
+
+		FD_ZERO(&fdset);
+		FD_SET(pcap_fd, &fdset);
+
+		timeout.tv_sec = 1;
+		timeout.tv_usec = 0;
+
+		if (select(pcap_fd + 1, &fdset, NULL, NULL, &timeout) > 0)
+		{
+			if (pcap_next_ex(engine->pcap_handle, &pkt_header, &pkt_data) == 1)
+			{
+				if (opts->debugging)
+					printf("packet of %u bytes captured\n", pkt_header->caplen);
+				process_response(engine, pkt_header, pkt_data);
+			}
+		}
+		usleep(1000);
+	}
+
+	if (gettimeofday(&current_time, NULL) < 0)
+		error(EXIT_FAILURE, errno, "gettimeofday");
+	tvsub(&current_time, &scan_start);
+	total_time = (double)current_time.tv_sec +
+		(double)current_time.tv_usec / 1000000.0;
+
+	printf("Scan took %.2f secs\n", total_time);
+/*
+	for (unsigned short i = 0; i < number_of_ports; ++i)
+	{
+		if (nmap_xmit(nmap, scan_technique, ports[i]))
+			exit(EXIT_FAILURE);
+	}
+	//recv_packet(pcap_handle, scan_technique, ports[i], &port_lst);
+	recv_packet(pcap_handle, scan_technique, &port_lst);
+
+	if (gettimeofday(&tv_out, NULL) < 0)
+		error(EXIT_FAILURE, errno, "gettimeofday");
+	tvsub(&tv_out, &tv_in);
+	scantime = ((double)tv_out.tv_sec) +
+		((double)tv_out.tv_usec) / 1000000.0;
+
+	nmap_print_result(nmap, port_lst, scantime);
+	if (port_lst)
+		ft_lstclear(&port_lst, free_port);
+		*/
+}
 struct nmap_data *
 nmap_init()
 {
@@ -677,13 +926,13 @@ nmap_get_scan_technique_by_name(char *expr)
 	for (int i = 0; i < MAXSCANS; ++i)
 	{
 		if (strcmp(scan_modes[i].name, expr) == 0)
-			return scan_modes[i].option;
+			return scan_modes[i].flag;
 	}
 	return 0;
 }
 
 int
-nmap_arg_parse(int argc, char **argv, int *arg_index)
+nmap_arg_parse(int argc, char **argv, t_scan_options *opts, int *arg_index)
 {
 	int opt;
 	struct option long_options[] =
@@ -694,7 +943,7 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 		{"file", required_argument, 0, 'f'},
 		{"speedup", required_argument, 0, 's'},
 		{"scan", required_argument, 0, 'S'},
-		{"print", no_argument, 0, 'x'},
+		{"debug", no_argument, 0, 'd'},
 		{0}
 	};
 
@@ -703,22 +952,27 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 	if (argc < 2)
 		print_usage_and_exit(program_name);
 
-	while ((opt = getopt_long(argc, argv, "hxp:i:f:", long_options, NULL)) != -1)
+	while ((opt = getopt_long(argc, argv, "hdp:i:f:", long_options, NULL)) != -1)
 	{
 		switch (opt)
 		{
 			case 'p':
-				if (ports)
+				if (opts->portlist)
+		//		if (ports)
 					nmap_print_error_and_exit("only one --ports option allowed, separate multiples ranges with commas.");
-				ports = nmap_get_ports(optarg, &number_of_ports);
+		//		ports = nmap_get_ports(optarg, &number_of_ports);
+				opts->portlist = strdup(optarg);
 				break;
 			case 'i':
-				if (source)
+		//		if (source)
+				if (opts->target)
 					nmap_print_error_and_exit("you can only use --ip option once.");
-				source = optarg;
+		//		source = optarg;
+				opts->target = strdup(optarg);
 				break;
 			case 'f':
-				filename = optarg;
+		//		filename = optarg;
+				opts->filename = strdup(optarg);
 				break;
 			case 's':
 				number_of_threads = atoi(optarg);
@@ -726,13 +980,16 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 					nmap_print_error_and_exit("speedup exceeded.");
 				break;
 			case 'S':
-				scan_technique = nmap_get_scan_technique_by_name(optarg);
-				if (scan_technique == 0)
-					nmap_print_error_and_exit("scan type is invalid.");
+		//		scan_technique = nmap_get_scan_technique_by_name(optarg);
+				opts->scan_flag = nmap_get_scan_technique_by_name(optarg);
+		//		if (scan_technique == 0)
+				if (opts->scan_flag == 0)
+					nmap_print_error_and_exit("scan flag is invalid.");
 				break;
-			case 'x':
+			case 'd':
 				print_all_packet_info = 1;
 				debugging = 1;
+				opts->debugging = 1;
 				break;
 			case 'h':
 			default:
@@ -740,10 +997,12 @@ nmap_arg_parse(int argc, char **argv, int *arg_index)
 		}
 	}
 
-	if (filename && source)
+//	if (filename && source)
+	if (opts->target && opts->filename)
 		nmap_print_error_and_exit("--ip and --file options cannot be used at the same time.");
 
-	if (filename)
+//	if (filename)
+	if (opts->filename)
 		nmap_ip_file_parse(filename);
 
 	*arg_index = optind;
@@ -872,26 +1131,90 @@ nmap_pcap_set_filter(pcap_t *pcap_handle, char *filter_exp)
 	return 0;
 }
 
+void
+init_scan_engine(t_scan_engine *e)
+{
+	memset(e, 0, sizeof(t_scan_engine));
+
+	e->max_outstanding = 10;
+	e->global_timing.timeout = 2.0;
+}
+
+void
+free_scan_options(t_scan_options *opts)
+{
+	if (opts->target) free(opts->target);
+	if (opts->filename) free(opts->filename);
+	if (opts->portlist) free(opts->portlist);
+}
+
+void
+init_probe_list(t_scan_engine *engine, unsigned short *ports, unsigned int num_ports)
+{
+	for (unsigned int pos = 0; pos < num_ports; ++pos)
+	{
+		t_probe *probe;
+		t_list *node;
+
+		probe = malloc(sizeof(t_probe));
+		if (probe == NULL)
+			continue ;
+
+		memset(probe, 0, sizeof(t_probe));
+		probe->port = ports[pos];
+		probe->state = PORT_UNKNOWN;
+		probe->timing.timeout = engine->global_timing.timeout;
+
+		node = ft_lstnew(probe);
+		if (node == NULL)
+		{
+			free(probe);
+			continue ;
+		}
+
+		ft_lstadd_back(&engine->probe_list, node);
+		++engine->total_probes;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
 	int arg_index;
-	pcap_t *pcap_handle;
-	struct nmap_data *nmap;
+//	pcap_t *pcap_handle;
+//	struct nmap_data *nmap;
+	t_scan_options opts;
+	t_scan_engine engine;
+	unsigned short *ports;
+	unsigned int num_ports;
 
-	if (nmap_arg_parse(argc, argv, &arg_index))
+	memset(&opts, 0, sizeof(t_scan_options));
+	opts.scan_flag = SCAN_ALL;
+
+	if (nmap_arg_parse(argc, argv, &opts, &arg_index))
 		nmap_print_error_and_exit("arg_parse failed.");
 
-	pcap_handle = nmap_pcap_get_handle();
-	if (pcap_handle == NULL)
+	init_scan_engine(&engine);
+
+//	pcap_handle = nmap_pcap_get_handle();
+	engine.pcap_handle = nmap_pcap_get_handle();
+//	if (pcap_handle == NULL)
+	if (engine.pcap_handle == NULL)
 		nmap_print_error_and_exit("pcap_handle failed.");
 
+//	if (nmap_pcap_set_filter(pcap_handle, "src port 80"))
+	if (nmap_pcap_set_filter(engine.pcap_handle, "src port 80")) //TODO: eliminate this and scanf the filter str
+		nmap_print_error_and_exit("pcap_filter failed.");
+
+	ports = get_ports( opts.portlist ? opts.portlist : DEFAULT_PORT_RANGE, &num_ports);
+
+	init_probe_list(&engine, ports, num_ports);
+
+	set_local_sockaddr(&engine.source);
+/*
 	nmap = nmap_init();
 	if (nmap == NULL)
 		nmap_print_error_and_exit("initialisation failed.");
-
-	if (nmap_pcap_set_filter(pcap_handle, "src port 80"))
-		nmap_print_error_and_exit("pcap_filter failed.");
 
 	if (!number_of_ports)
 		ports = nmap_get_ports(DEFAULT_PORT_RANGE, &number_of_ports);
@@ -899,14 +1222,18 @@ main(int argc, char **argv)
 	if (!scan_technique)
 		scan_technique = SCAN_ALL;
 
-	if (nmap_set_src_sockaddr(nmap))
+	if (nmap_set_source_sockaddr(nmap))
 		exit(EXIT_FAILURE);
+*/
+//	nmap_run(nmap, pcap_handle, source);
+	scan_ports(&engine, &opts, ports, num_ports);
 
-	nmap_run(nmap, pcap_handle, source);
-
-	free(nmap);
+//	free(nmap);
+//	pcap_close(pcap_handle);
 	free(ports);
-	pcap_close(pcap_handle);
+	ft_lstclear(&engine.probe_list, free);
+	pcap_close(engine.pcap_handle);
+	free_scan_options(&opts);
 
 	return 0;
 }
