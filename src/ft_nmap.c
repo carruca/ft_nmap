@@ -254,7 +254,7 @@ const t_port_state port_states[] =
 	{"unfiltered", PORT_UNFILTERED},
 	{"openfiltered", PORT_OPENFILTERED}
 };
-
+/*
 void
 print_port_result(void *port)
 {
@@ -277,9 +277,9 @@ nmap_print_result(struct nmap_data *nmap, t_list *port_lst, double scantime)
 	printf("IP address: %s\n",
 		inet_ntoa(nmap->dst_sockaddr.sin_addr));
 	printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
-	ft_lstiter(port_lst, print_port_result);
+//	ft_lstiter(port_lst, print_port_result);
 }
-
+*/
 t_port *
 init_port(
 	unsigned short s_port, unsigned char protocol,
@@ -478,11 +478,11 @@ cksum(char *buffer, size_t bufsize)
 
 struct pseudo_header
 {
-	unsigned long src_addr;
-	unsigned long dst_addr;
-	char zero;
-	unsigned char proto;
-	unsigned long th_len;
+	uint32_t src_addr;
+	uint32_t dst_addr;
+	uint8_t zero;
+	uint8_t proto;
+	uint16_t th_len;
 	struct tcphdr th;
 };
 
@@ -681,33 +681,19 @@ nmap_xmit(struct nmap_data *nmap, short scan_type, unsigned short port)
 }
 
 int
-send_syn_probe(t_scan_engine *engine, t_scan_options *opts, t_probe *probe)
+send_syn_probe(int raw_socket, t_scan_engine *engine, t_scan_options *opts, t_probe *probe)
 {
-	int raw_socket;
 	ssize_t bytes_sent;
-	struct protoent *proto;
 	struct tcphdr *th;
 	char packet[sizeof(struct tcphdr)];
-
-	proto = getprotobyname("tcp");
-	if (proto == NULL)
-	{
-		perror("getprotobyname");
-		return 1;
-	}
-	raw_socket = socket(AF_INET, SOCK_RAW, proto->p_proto);
-	if (raw_socket < 0)
-	{
-		perror("socket");
-		return 1;
-	}
+	pid_t pid = getpid();
 
 	memset(packet, 0, sizeof(packet));
-
 	th = (struct tcphdr *)packet;
+
 	th->th_sport = htons(rand() % 65535);
 	th->th_dport = htons(probe->port);
-	th->th_seq = htons(rand() % getpid());
+	th->th_seq = htonl(rand() % pid);
 	th->th_off = TCP_HLEN;
 	th->th_flags = TH_SYN;
 	th->th_win = htons(1024);
@@ -719,6 +705,7 @@ send_syn_probe(t_scan_engine *engine, t_scan_options *opts, t_probe *probe)
 	{
 		if (gettimeofday(&probe->sent_time, NULL) < 0)
 			error(EXIT_FAILURE, errno, "gettimeofday");
+
 		probe->outstanding = 1;
 		probe->state = PORT_TESTING;
 		++engine->outstanding_probes;
@@ -731,7 +718,7 @@ send_syn_probe(t_scan_engine *engine, t_scan_options *opts, t_probe *probe)
 	}
 	return 1;
 }
-
+/*
 void
 nmap_run(struct nmap_data *nmap, pcap_t *pcap_handle, const char *hostname)
 {
@@ -763,9 +750,25 @@ nmap_run(struct nmap_data *nmap, pcap_t *pcap_handle, const char *hostname)
 	scantime = ((double)tv_out.tv_sec) +
 		((double)tv_out.tv_usec) / 1000000.0;
 
-	nmap_print_result(nmap, port_lst, scantime);
+//	nmap_print_result(nmap, port_lst, scantime);
 	if (port_lst)
 		ft_lstclear(&port_lst, free_port);
+}
+*/
+int
+get_raw_socket_by_protocol(const char *protocol_name)
+{
+	int raw_socket;
+	struct protoent *proto;
+
+	proto = getprotobyname(protocol_name);
+	if (proto == NULL)
+		error(EXIT_FAILURE, errno, "getprotobyname");
+
+	raw_socket = socket(AF_INET, SOCK_RAW, proto->p_proto);
+	if (raw_socket < 0)
+		error(EXIT_FAILURE, errno, "socket");
+	return raw_socket;
 }
 
 void
@@ -773,7 +776,9 @@ send_probe_list(t_scan_engine *engine, t_scan_options *opts)
 {
 	t_list *current_node;
 	t_probe *probe;
+	int raw_socket;
 
+	raw_socket = get_raw_socket_by_protocol("tcp");
 	current_node = engine->probe_list;
 
 	while (current_node
@@ -782,7 +787,7 @@ send_probe_list(t_scan_engine *engine, t_scan_options *opts)
 		probe = current_node->content;
 		if (probe->state == PORT_UNKNOWN)
 		{
-			if (send_syn_probe(engine, opts, probe) == 0)
+			if (send_syn_probe(raw_socket, engine, opts, probe) == 0)
 				current_node = current_node->next;
 			else
 				break;
@@ -790,28 +795,66 @@ send_probe_list(t_scan_engine *engine, t_scan_options *opts)
 		else
 			current_node = current_node->next;
 	}
+	close(raw_socket);
 }
 
 void
-scan_ports(
-	t_scan_engine *engine, t_scan_options *opts,
-	unsigned short *ports, int num_ports)
+print_probe(void *content)
+{
+	t_probe *probe;
+	char *state_str;
+
+	probe = content;
+	switch(probe->state)
+	{
+		case PORT_TESTING:
+			state_str = "testing";
+			break;
+		case PORT_OPEN:
+			state_str = "open";
+			break;
+		case PORT_CLOSED:
+			state_str = "closed";
+			break;
+		default:
+			state_str = "unknown";
+	}
+
+	printf("%-9u %-9s %-s\n", probe->port, state_str, "Unassigned");
+}
+
+void
+print_scan_results(t_scan_engine *engine)
+{
+	printf("IP address: %s\n",
+		inet_ntoa(engine->target.sin_addr));
+	printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
+	ft_lstiter(engine->probe_list, print_probe);
+}
+
+void
+check_timeouts(t_scan_engine *engine)
+{
+	(void)engine;
+}
+
+void
+ultra_scan(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 {
 	struct timeval scan_start, current_time, timeout;
-	double total_time;
 	struct pcap_pkthdr *pkt_header;
 	const u_char *pkt_data;
+	double total_time;
+	int pcap_fd, pcap_res;
 	fd_set fdset;
-	int pcap_fd;
 
-	(void)ports;
 	if (gettimeofday(&scan_start, NULL) < 0)
 		error(EXIT_FAILURE, errno, "gettimeofday");
 
 	if (set_sockaddr_by_hostname(&engine->target, opts->target))
 		exit(EXIT_FAILURE);
-	print_scan_config(engine, opts, num_ports);
 
+	print_scan_config(engine, opts, num_ports);
 
 //	while (engine->completed_probes < engine->total_probes)
 	{
@@ -827,13 +870,15 @@ scan_ports(
 
 		if (select(pcap_fd + 1, &fdset, NULL, NULL, &timeout) > 0)
 		{
-			if (pcap_next_ex(engine->pcap_handle, &pkt_header, &pkt_data) == 1)
+			while ((pcap_res = pcap_next_ex(engine->pcap_handle, &pkt_header, &pkt_data)) == 1)
 			{
 				if (opts->debugging)
-					printf("packet of %u bytes captured\n", pkt_header->caplen);
+					printf("probe of %u bytes captured\n", pkt_header->caplen);
 				process_response(engine, pkt_header, pkt_data);
 			}
 		}
+
+		check_timeouts(engine);
 		usleep(1000);
 	}
 
@@ -844,6 +889,7 @@ scan_ports(
 		(double)current_time.tv_usec / 1000000.0;
 
 	printf("Scan took %.2f secs\n", total_time);
+	print_scan_results(engine);
 /*
 	for (unsigned short i = 0; i < number_of_ports; ++i)
 	{
@@ -1010,7 +1056,7 @@ nmap_arg_parse(int argc, char **argv, t_scan_options *opts, int *arg_index)
 }
 
 pcap_t *
-nmap_pcap_get_handle()
+get_pcap_handle()
 {
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
@@ -1055,7 +1101,8 @@ nmap_pcap_get_handle()
 		exit(EXIT_FAILURE);
 	}
 
-	if (pcap_set_buffer_size(pcap_handle, BUFSIZ) != 0)
+	printf("bufsiz=%d\n", PCAP_BUFSIZ);
+	if (pcap_set_buffer_size(pcap_handle, PCAP_BUFSIZ) != 0)
 	{
 		fprintf(stderr, "Couldn't set buffer size: %s\n",
 			pcap_geterr(pcap_handle));
@@ -1109,7 +1156,7 @@ nmap_pcap_get_handle()
 }
 
 int
-nmap_pcap_set_filter(pcap_t *pcap_handle, char *filter_exp)
+set_pcap_filter(pcap_t *pcap_handle, char *filter_exp)
 {
 	struct bpf_program fp;
 
@@ -1196,14 +1243,14 @@ main(int argc, char **argv)
 
 	init_scan_engine(&engine);
 
-//	pcap_handle = nmap_pcap_get_handle();
-	engine.pcap_handle = nmap_pcap_get_handle();
+//	pcap_handle = pcap_get_handle();
+	engine.pcap_handle = get_pcap_handle();
 //	if (pcap_handle == NULL)
 	if (engine.pcap_handle == NULL)
 		nmap_print_error_and_exit("pcap_handle failed.");
 
-//	if (nmap_pcap_set_filter(pcap_handle, "src port 80"))
-	if (nmap_pcap_set_filter(engine.pcap_handle, "src port 80")) //TODO: eliminate this and scanf the filter str
+//	if (set_pcap_filter(pcap_handle, "src port 80"))
+	if (set_pcap_filter(engine.pcap_handle, "src google.com")) //TODO: eliminate this and scanf the filter str
 		nmap_print_error_and_exit("pcap_filter failed.");
 
 	ports = get_ports( opts.portlist ? opts.portlist : DEFAULT_PORT_RANGE, &num_ports);
@@ -1226,7 +1273,7 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 */
 //	nmap_run(nmap, pcap_handle, source);
-	scan_ports(&engine, &opts, ports, num_ports);
+	ultra_scan(&engine, &opts, num_ports);
 
 //	free(nmap);
 //	pcap_close(pcap_handle);

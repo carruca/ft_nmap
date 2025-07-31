@@ -31,7 +31,7 @@
 # define SCAN_ACK   0x0010
 # define SCAN_UDP   0x0020
 # define SCAN_ALL   0x003F
-
+/*
 # define MAXSTATES          5
 
 # define PORT_CLOSED        0x0001
@@ -44,6 +44,9 @@
 # define MAX_PORTS               1024
 # define INITIAL_TIMEOUT_MS      1000
 # define MAX_RETRIES             3
+*/
+
+# define PCAP_BUFSIZ USHRT_MAX // 65535
 
 struct nmap_data
 {
@@ -73,13 +76,13 @@ typedef struct s_port_state t_port_state;
 enum e_port_state
 {
   PORT_UNKNOWN = 0,
-  PORT_TESTING
-/*  PORT_OPEN,
+  PORT_TESTING,
+  PORT_OPEN,
   PORT_CLOSED,
   PORT_FILTERED,
   PORT_UNFILTERED,
   PORT_OPENFILTERED
-*/};
+};
 
 typedef enum e_port_state t_port_state2;
 
