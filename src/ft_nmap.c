@@ -245,7 +245,7 @@ print_pkt_header(struct pcap_pkthdr *pkt_header)
 	++number_of_packets;
 	return 0;
 }
-
+/*
 const t_port_state port_states[] =
 {
 	{"closed", PORT_CLOSED},
@@ -254,7 +254,7 @@ const t_port_state port_states[] =
 	{"unfiltered", PORT_UNFILTERED},
 	{"openfiltered", PORT_OPENFILTERED}
 };
-/*
+
 void
 print_port_result(void *port)
 {
@@ -801,6 +801,7 @@ send_probe_list(t_scan_engine *engine, t_scan_options *opts)
 void
 print_probe(void *content)
 {
+	struct servent *serv;
 	t_probe *probe;
 	char *state_str;
 
@@ -816,11 +817,17 @@ print_probe(void *content)
 		case PORT_CLOSED:
 			state_str = "closed";
 			break;
+		case PORT_FILTERED:
+			state_str = "filtered";
+			break;
 		default:
 			state_str = "unknown";
 	}
+//	serv = getservbyport(htons(probe->port), "tcp");
+	serv = getservbyport(htons(probe->port), NULL);
 
-	printf("%-9u %-9s %-s\n", probe->port, state_str, "Unassigned");
+	printf("%-9u %-9s %-s\n",
+		probe->port, state_str, (serv) ? serv->s_name : "Unassigned");
 }
 
 void
@@ -833,15 +840,53 @@ print_scan_results(t_scan_engine *engine)
 }
 
 void
-check_timeouts(t_scan_engine *engine)
+cktimeout_probe_list(t_scan_engine *engine)
 {
-	(void)engine;
+	t_list *current_node;
+	t_probe *probe;
+	double elapsed_time;
+	struct timeval current_time;
+
+
+	current_node = engine->probe_list;
+	while (current_node)
+	{
+		probe = current_node->content;
+		if (probe->outstanding)
+		{
+			if (gettimeofday(&current_time, NULL) < 0)
+				error(EXIT_FAILURE, errno, "gettimeofday");
+			tvsub(&current_time, &probe->sent_time);	
+			elapsed_time = (double)current_time.tv_sec
+				+ (double)current_time.tv_usec / 1000000.0;
+
+			if (elapsed_time > probe->timing.timeout)
+			{
+				if (debugging)
+					printf("port %u timeout after %.2fs\n", probe->port, elapsed_time);
+	/*			if (probe->retries < MAX_RETRIES)
+				{
+					++probe->retries;
+					probe->outstanding = 0;
+					--engine->outstanding_probes;
+				}
+				else
+	*/			{
+					probe->state = PORT_FILTERED;
+					probe->outstanding = 0;
+					--engine->outstanding_probes;
+					++engine->completed_probes;
+				}
+			}
+		}
+		current_node = current_node->next;
+	}
 }
 
 void
 ultra_scan(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 {
-	struct timeval scan_start, current_time, timeout;
+	struct timeval scan_start, scan_end, timeout;
 	struct pcap_pkthdr *pkt_header;
 	const u_char *pkt_data;
 	double total_time;
@@ -856,7 +901,7 @@ ultra_scan(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 
 	print_scan_config(engine, opts, num_ports);
 
-//	while (engine->completed_probes < engine->total_probes)
+	while (engine->completed_probes < engine->total_probes)
 	{
 		send_probe_list(engine, opts);
 
@@ -865,8 +910,8 @@ ultra_scan(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 		FD_ZERO(&fdset);
 		FD_SET(pcap_fd, &fdset);
 
-		timeout.tv_sec = 1;
-		timeout.tv_usec = 0;
+		timeout.tv_sec = 0;
+		timeout.tv_usec = 100000;
 
 		if (select(pcap_fd + 1, &fdset, NULL, NULL, &timeout) > 0)
 		{
@@ -878,15 +923,15 @@ ultra_scan(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 			}
 		}
 
-		check_timeouts(engine);
+		cktimeout_probe_list(engine);
 		usleep(1000);
 	}
 
-	if (gettimeofday(&current_time, NULL) < 0)
+	if (gettimeofday(&scan_end, NULL) < 0)
 		error(EXIT_FAILURE, errno, "gettimeofday");
-	tvsub(&current_time, &scan_start);
-	total_time = (double)current_time.tv_sec +
-		(double)current_time.tv_usec / 1000000.0;
+	tvsub(&scan_end, &scan_start);
+	total_time = (double)scan_end.tv_sec
+		+ (double)scan_end.tv_usec / 1000000.0;
 
 	printf("Scan took %.2f secs\n", total_time);
 	print_scan_results(engine);
@@ -1101,7 +1146,6 @@ get_pcap_handle()
 		exit(EXIT_FAILURE);
 	}
 
-	printf("bufsiz=%d\n", PCAP_BUFSIZ);
 	if (pcap_set_buffer_size(pcap_handle, PCAP_BUFSIZ) != 0)
 	{
 		fprintf(stderr, "Couldn't set buffer size: %s\n",

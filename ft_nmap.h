@@ -47,6 +47,7 @@
 */
 
 # define PCAP_BUFSIZ USHRT_MAX // 65535
+# define MAX_RETRIES 3
 
 struct nmap_data
 {
@@ -64,7 +65,7 @@ struct scan_mode
     struct sockaddr_in *, struct sockaddr_in *,
     short, int);
 };
-
+/*
 struct s_port_state
 {
   const char *name;
@@ -72,7 +73,7 @@ struct s_port_state
 };
 
 typedef struct s_port_state t_port_state;
-
+*/
 enum e_port_state
 {
   PORT_UNKNOWN = 0,
@@ -84,7 +85,7 @@ enum e_port_state
   PORT_OPENFILTERED
 };
 
-typedef enum e_port_state t_port_state2;
+typedef enum e_port_state t_port_state;
 
 struct s_port
 {
@@ -118,7 +119,7 @@ typedef struct s_timing_info t_timing_info;
 struct s_probe
 {
   unsigned short port;
-  t_port_state2 state;
+  t_port_state state;
   struct timeval sent_time;
   struct timeval recv_time;
   int retries;
