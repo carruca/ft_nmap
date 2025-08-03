@@ -48,6 +48,7 @@
 
 # define PCAP_BUFSIZ USHRT_MAX // 65535
 # define MAX_RETRIES 3
+# define MAX_PORTSTATES 7
 
 struct nmap_data
 {

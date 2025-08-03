@@ -295,7 +295,7 @@ init_port(
 	port->portno = s_port;
 	port->proto = protocol;
 	port->state = state;
-	port->service_name = strdup((serv) ? serv->s_name : "Unassigned");
+	port->service_name = strdup((serv) ? serv->s_name : "unknown");
 	if (port->service_name == NULL)
 	{
 		free(port);
@@ -798,36 +798,36 @@ send_probe_list(t_scan_engine *engine, t_scan_options *opts)
 	close(raw_socket);
 }
 
+static const char *
+get_port_state_string(t_port_state state)
+{
+	static const char *strings[] =
+	{
+		"unknown",
+		"testing",
+		"open",
+		"closed",
+		"filtered",
+		"unfiltered",
+		"openfiltered"
+	};
+
+	return strings[state];
+}
+
 void
 print_probe(void *content)
 {
 	struct servent *serv;
 	t_probe *probe;
-	char *state_str;
 
 	probe = content;
-	switch(probe->state)
-	{
-		case PORT_TESTING:
-			state_str = "testing";
-			break;
-		case PORT_OPEN:
-			state_str = "open";
-			break;
-		case PORT_CLOSED:
-			state_str = "closed";
-			break;
-		case PORT_FILTERED:
-			state_str = "filtered";
-			break;
-		default:
-			state_str = "unknown";
-	}
-//	serv = getservbyport(htons(probe->port), "tcp");
 	serv = getservbyport(htons(probe->port), NULL);
 
 	printf("%-9u %-9s %-s\n",
-		probe->port, state_str, (serv) ? serv->s_name : "Unassigned");
+		probe->port,
+		get_port_state_string(probe->state),
+		(serv) ? serv->s_name : "unknown");
 }
 
 void
@@ -835,6 +835,7 @@ print_scan_results(t_scan_engine *engine)
 {
 	printf("IP address: %s\n",
 		inet_ntoa(engine->target.sin_addr));
+	printf("\n");
 	printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
 	ft_lstiter(engine->probe_list, print_probe);
 }
@@ -884,7 +885,7 @@ cktimeout_probe_list(t_scan_engine *engine)
 }
 
 void
-ultra_scan(t_scan_engine *engine, t_scan_options *opts, int num_ports)
+scan_ports(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 {
 	struct timeval scan_start, scan_end, timeout;
 	struct pcap_pkthdr *pkt_header;
@@ -911,7 +912,7 @@ ultra_scan(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 		FD_SET(pcap_fd, &fdset);
 
 		timeout.tv_sec = 0;
-		timeout.tv_usec = 100000;
+		timeout.tv_usec = 1000;
 
 		if (select(pcap_fd + 1, &fdset, NULL, NULL, &timeout) > 0)
 		{
@@ -1317,7 +1318,7 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 */
 //	nmap_run(nmap, pcap_handle, source);
-	ultra_scan(&engine, &opts, num_ports);
+	scan_ports(&engine, &opts, num_ports);
 
 //	free(nmap);
 //	pcap_close(pcap_handle);
