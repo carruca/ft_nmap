@@ -419,7 +419,7 @@ update_probe(t_scan_engine *engine, t_probe *probe, unsigned short sport,
 {
 	if (probe->port == sport && probe->outstanding)
 	{
-		if (th->th_flags & TH_SYN && th->th_flags & TH_ACK)
+		if (th->th_flags & TH_SYN)
 			probe->state = PORT_OPEN;
 		else if (th->th_flags & TH_RST)
 			probe->state = PORT_CLOSED;
