@@ -13,7 +13,7 @@ LIBFT			= $(LIBFTPATH)/libft.a
 CC      	= gcc
 CFLAGS  	= -Wall -Werror -Wextra
 INC 			= -I. -I$(LIBFTPATH)
-LDFLAGS 	= -lm -lpcap -L $(LIBFTPATH) -lft
+LDFLAGS 	= -lm -lpcap -lpthread -L $(LIBFTPATH) -lft
 FSANITIZE = -g3 -fsanitize=address -fsanitize=leak -fsanitize=undefined -fsanitize=bounds -fsanitize=null
 
 all: $(NAME)

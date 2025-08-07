@@ -415,7 +415,7 @@ recv_packet(pcap_t *handle, short scan_type, t_list **port_lst)
 
 int
 update_probe(t_scan_engine *engine, t_probe *probe, unsigned short sport,
-	const struct pcap_pkthdr *pkt_header, struct tcphdr *th)
+	struct timeval ts, struct tcphdr *th)
 {
 	if (probe->port == sport && probe->outstanding)
 	{
@@ -425,7 +425,7 @@ update_probe(t_scan_engine *engine, t_probe *probe, unsigned short sport,
 			probe->state = PORT_CLOSED;
 
 		probe->outstanding = 0;
-		probe->recv_time = pkt_header->ts;
+		probe->recv_time = ts;
 		--engine->outstanding_probes;
 		++engine->completed_probes;
 		return 1;
@@ -435,7 +435,7 @@ update_probe(t_scan_engine *engine, t_probe *probe, unsigned short sport,
 
 void
 process_response(t_scan_engine *engine,
-	const struct pcap_pkthdr *pkt_header, const u_char *pkt_data)
+	struct timeval ts, const u_char *pkt_data)
 {
 	unsigned short sport;
 	unsigned int ip_hlen;
@@ -457,7 +457,7 @@ process_response(t_scan_engine *engine,
 	current_node = engine->probe_list;
 	while (current_node)
 	{
-		if (update_probe(engine, current_node->content, sport, pkt_header, th))
+		if (update_probe(engine, current_node->content, sport, ts, th))
 			break;
 		current_node = current_node->next;
 	}
@@ -545,7 +545,7 @@ const struct scan_mode scan_modes[] =
 	{"UDP", SCAN_UDP}
 */	{"SYN", SCAN_SYN, syn_encode_and_send}
 };
-
+/*
 void
 nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int threads)
 {
@@ -564,7 +564,7 @@ nmap_print_scan_config(struct nmap_data *nmap, int ports, short scan_mode, int t
 	printf("Scanning...\n");
 	printf("\n");
 }
-
+*/
 void
 print_scan_config(const t_scan_engine *engine, const t_scan_options *opts, int num_ports)
 {
@@ -579,7 +579,7 @@ print_scan_config(const t_scan_engine *engine, const t_scan_options *opts, int n
 			printf(" %s", scan_modes[pos].name);
 	}
 	printf("\n");
-//	printf("No of threads : %d\n", threads);
+	printf("No of threads : %d\n", opts->num_threads);
 	printf("Scanning...\n");
 	printf("\n");
 }
@@ -809,7 +809,7 @@ get_port_state_string(t_port_state state)
 		"closed",
 		"filtered",
 		"unfiltered",
-		"openfiltered"
+		"open|filtered"
 	};
 
 	return strings[state];
@@ -821,6 +821,7 @@ print_probe(void *content)
 	struct servent *serv;
 	t_probe *probe;
 
+
 	probe = content;
 	serv = getservbyport(htons(probe->port), NULL);
 
@@ -830,6 +831,18 @@ print_probe(void *content)
 		(serv) ? serv->s_name : "unknown");
 }
 
+int
+cmp_probe_state(t_port_state *state, t_probe *probe)
+{
+	return probe->state != *state;
+}
+
+void
+print_probe_list_if(t_port_state state, t_list *probe_list)
+{
+	ft_lstiter_if(probe_list, &state, cmp_probe_state, print_probe);
+}
+
 void
 print_scan_results(t_scan_engine *engine)
 {
@@ -837,7 +850,11 @@ print_scan_results(t_scan_engine *engine)
 		inet_ntoa(engine->target.sin_addr));
 	printf("\n");
 	printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
-	ft_lstiter(engine->probe_list, print_probe);
+	print_probe_list_if(PORT_OPEN, engine->probe_list);
+	print_probe_list_if(PORT_CLOSED, engine->probe_list);
+	print_probe_list_if(PORT_FILTERED, engine->probe_list);
+	print_probe_list_if(PORT_UNFILTERED, engine->probe_list);
+	print_probe_list_if(PORT_OPENFILTERED, engine->probe_list);
 }
 
 void
@@ -920,7 +937,7 @@ scan_ports(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 			{
 				if (opts->debugging)
 					printf("probe of %u bytes captured\n", pkt_header->caplen);
-				process_response(engine, pkt_header, pkt_data);
+				process_response(engine, pkt_header->ts, pkt_data);
 			}
 		}
 
@@ -936,38 +953,275 @@ scan_ports(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 
 	printf("Scan took %.2f secs\n", total_time);
 	print_scan_results(engine);
-/*
-	for (unsigned short i = 0; i < number_of_ports; ++i)
-	{
-		if (nmap_xmit(nmap, scan_technique, ports[i]))
-			exit(EXIT_FAILURE);
-	}
-	//recv_packet(pcap_handle, scan_technique, ports[i], &port_lst);
-	recv_packet(pcap_handle, scan_technique, &port_lst);
-
-	if (gettimeofday(&tv_out, NULL) < 0)
-		error(EXIT_FAILURE, errno, "gettimeofday");
-	tvsub(&tv_out, &tv_in);
-	scantime = ((double)tv_out.tv_sec) +
-		((double)tv_out.tv_usec) / 1000000.0;
-
-	nmap_print_result(nmap, port_lst, scantime);
-	if (port_lst)
-		ft_lstclear(&port_lst, free_port);
-		*/
 }
-struct nmap_data *
-nmap_init()
-{
-	struct nmap_data *nmap;
 
-	nmap = malloc(sizeof(struct nmap_data));
-	if (nmap == NULL)
+int
+packet_enqueue(t_packet_queue *queue, t_packet *pkt)
+{
+	t_list *node;
+
+	pthread_mutex_lock(&queue->mutex);
+
+	while (queue->count >= MAX_PKTQUEUE
+		&& !queue->shutdown)
+		pthread_cond_wait(&queue->not_full, &queue->mutex);
+
+	if (queue->shutdown)
+	{
+		pthread_mutex_unlock(&queue->mutex);
+		return 0;
+	}
+
+	node = ft_lstnew(pkt);
+	if (node == NULL)
+	{
+		pthread_mutex_unlock(&queue->mutex);
+		return 0;
+	}
+
+	ft_lstadd_back(&queue->head, node);
+	queue->tail = node;
+	++queue->count;
+
+	pthread_cond_signal(&queue->not_empty);
+
+	pthread_mutex_unlock(&queue->mutex);
+	return 1;
+}
+
+t_packet *
+packet_dequeue(t_packet_queue *queue)
+{
+	t_packet *pkt;
+	t_list *node;
+
+	pthread_mutex_lock(&queue->mutex);
+
+	while (queue->count == 0
+		&& !queue->shutdown)
+		pthread_cond_wait(&queue->not_empty, &queue->mutex);
+
+	if ((queue->shutdown && queue->count == 0)
+		|| queue->head ==  NULL)
+	{
+		pthread_mutex_unlock(&queue->mutex);
+		return NULL;
+	}
+
+	node = queue->head;
+	pkt = (t_packet *)node->content;
+	queue->head = queue->head->next;
+	if (!queue->head)
+		queue->tail = NULL;
+	--queue->count;
+
+	free(node);
+	pthread_cond_signal(&queue->not_full);
+
+	pthread_mutex_unlock(&queue->mutex);
+	return pkt;
+}
+
+void
+packet_destroy(t_packet *packet)
+{
+	if (packet != NULL)
+	{
+		free(packet->data);
+		free(packet);
+	}
+}
+
+t_packet *
+packet_create(const u_char *data, size_t size, struct timeval tv)
+{
+	t_packet *packet;
+
+	packet = malloc(sizeof(t_packet));
+	if (packet == NULL)
 		return NULL;
 
-	memset(nmap, 0, sizeof(*nmap));
-	nmap->id = getpid();
-	return nmap;
+	packet->data = malloc(size);
+	if (packet->data == NULL)
+	{
+		free(packet);
+		return NULL;
+	}
+
+	memcpy(packet->data, data, size);
+	packet->size = size;
+	packet->ts = tv;
+	return packet;
+}
+
+void
+packet_queue_handler(t_packet_queue *queue,
+	const u_char *data, size_t size, struct timeval tv)
+{
+	t_packet *packet;
+
+	packet = packet_create(data, size, tv);
+	if (packet == NULL)
+		return ;
+
+	if (!packet_enqueue(queue, packet))
+		packet_destroy(packet);
+}
+
+void
+packet_queue_destroy(t_packet_queue *queue)
+{
+	if (queue)
+	{
+		pthread_cond_destroy(&queue->not_empty);
+		pthread_cond_destroy(&queue->not_full);
+		pthread_mutex_destroy(&queue->mutex);
+		free(queue);
+	}
+}
+
+t_packet_queue *
+packet_queue_create()
+{
+	t_packet_queue *queue;
+
+	queue = calloc(1, sizeof(t_packet_queue));
+	if (queue == NULL) return NULL;
+
+	pthread_mutex_init(&queue->mutex, NULL);
+	pthread_cond_init(&queue->not_empty, NULL);
+	pthread_cond_init(&queue->not_full, NULL);
+	return queue;
+}
+
+void *
+packet_capture_thread(void *arg)
+{
+	int pcap_fd, pcap_res;
+	fd_set fdset;
+	t_scan_engine *engine;
+	struct pcap_pkthdr *pkt_header;
+	const u_char *pkt_data;
+	struct timeval timeout;
+
+	engine = (t_scan_engine *)arg;
+	while (!engine->capture_queue->shutdown)
+	{
+		pcap_fd = pcap_get_selectable_fd(engine->pcap_handle);
+
+		FD_ZERO(&fdset);
+		FD_SET(pcap_fd, &fdset);
+
+		timeout.tv_sec = 0;
+		timeout.tv_usec = 10000;
+
+		if (select(pcap_fd + 1, &fdset, NULL, NULL, &timeout) > 0)
+		{
+			while ((pcap_res = pcap_next_ex(engine->pcap_handle, &pkt_header, &pkt_data)) == 1)
+			{
+				if (engine->opts->debugging)
+					printf("probe of %u bytes captured\n", pkt_header->caplen);
+				packet_queue_handler(engine->capture_queue,
+					pkt_data, pkt_header->caplen, pkt_header->ts);
+			}
+		}
+	}
+	return NULL;
+}
+
+
+void *
+packet_worker_thread(void *arg)
+{
+	t_scan_engine *engine;
+	t_packet *packet;
+
+	engine = (t_scan_engine *)arg;
+	while ((packet = packet_dequeue(engine->capture_queue)) != NULL)
+	{
+		pthread_mutex_lock(&engine->engine_mutex);
+		process_response(engine, packet->ts, packet->data);
+		pthread_mutex_unlock(&engine->engine_mutex);
+
+		packet_destroy(packet);
+	}
+	return NULL;
+}
+
+void
+scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
+{
+	struct timeval scan_start, scan_end;
+	double total_time;
+
+	if (gettimeofday(&scan_start, NULL) < 0)
+		error(EXIT_FAILURE, errno, "gettimeofday");
+
+	if (set_sockaddr_by_hostname(&engine->target, opts->target))
+		exit(EXIT_FAILURE);
+
+	print_scan_config(engine, opts, num_ports);
+
+	pthread_mutex_init(&engine->engine_mutex, NULL);
+
+	engine->capture_queue = packet_queue_create();
+	if (engine->capture_queue == NULL)
+		error(EXIT_FAILURE, errno, "capture_queue_create");
+
+	engine->worker_threads = calloc(engine->opts->num_threads, sizeof(pthread_t));
+	if (engine->worker_threads == NULL)
+		error(EXIT_FAILURE, errno, "worker_threads_create");
+
+	engine->capture_active = 1;
+
+	if (pthread_create(&engine->capture_thread, NULL, packet_capture_thread, engine) != 0)
+		error(EXIT_FAILURE, errno, "pthread_create");
+
+	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
+	{
+		if (pthread_create(&engine->worker_threads[pos], NULL, packet_worker_thread, engine) != 0)
+			error(EXIT_FAILURE, errno, "pthread_create");
+	}
+
+	while (engine->completed_probes < engine->total_probes)
+	{
+		send_probe_list(engine, opts);
+
+		cktimeout_probe_list(engine);
+		usleep(1000);
+	}
+
+// TODO: check all callocs to destroy
+	engine->capture_active = 0;
+	engine->capture_queue->shutdown = 1;
+
+	pthread_cond_broadcast(&engine->capture_queue->not_empty);
+	pthread_cond_broadcast(&engine->capture_queue->not_full);
+
+	pthread_join(engine->capture_thread, NULL);
+	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
+		pthread_join(engine->worker_threads[pos], NULL);
+
+	if (engine->worker_threads)
+	{
+		free(engine->worker_threads);
+		engine->worker_threads = NULL;
+	}
+	if (engine->capture_queue)
+	{
+		packet_queue_destroy(engine->capture_queue);
+		engine->capture_queue = NULL;
+	}
+	pthread_mutex_destroy(&engine->engine_mutex);
+
+	if (gettimeofday(&scan_end, NULL) < 0)
+		error(EXIT_FAILURE, errno, "gettimeofday");
+	tvsub(&scan_end, &scan_start);
+	total_time = (double)scan_end.tv_sec
+		+ (double)scan_end.tv_usec / 1000000.0;
+
+	printf("Scan took %.2f secs\n", total_time);
+	print_scan_results(engine);
 }
 
 void
@@ -1024,7 +1278,7 @@ nmap_get_scan_technique_by_name(char *expr)
 }
 
 int
-nmap_arg_parse(int argc, char **argv, t_scan_options *opts, int *arg_index)
+parse_args(int argc, char **argv, t_scan_options *opts, int *arg_index)
 {
 	int opt;
 	struct option long_options[] =
@@ -1067,7 +1321,8 @@ nmap_arg_parse(int argc, char **argv, t_scan_options *opts, int *arg_index)
 				opts->filename = strdup(optarg);
 				break;
 			case 's':
-				number_of_threads = atoi(optarg);
+				opts->num_threads = atoi(optarg);
+		//		number_of_threads = atoi(optarg);
 				if (number_of_threads > MAXTHREADS)
 					nmap_print_error_and_exit("speedup exceeded.");
 				break;
@@ -1224,12 +1479,13 @@ set_pcap_filter(pcap_t *pcap_handle, char *filter_exp)
 }
 
 void
-init_scan_engine(t_scan_engine *e)
+init_scan_engine(t_scan_engine *e, t_scan_options *opts)
 {
 	memset(e, 0, sizeof(t_scan_engine));
 
-	e->max_outstanding = 10;
+	e->max_outstanding = 100;
 	e->global_timing.timeout = 2.0;
+	e->opts = opts;
 }
 
 void
@@ -1273,8 +1529,6 @@ int
 main(int argc, char **argv)
 {
 	int arg_index;
-//	pcap_t *pcap_handle;
-//	struct nmap_data *nmap;
 	t_scan_options opts;
 	t_scan_engine engine;
 	unsigned short *ports;
@@ -1283,18 +1537,15 @@ main(int argc, char **argv)
 	memset(&opts, 0, sizeof(t_scan_options));
 	opts.scan_flag = SCAN_ALL;
 
-	if (nmap_arg_parse(argc, argv, &opts, &arg_index))
+	if (parse_args(argc, argv, &opts, &arg_index))
 		nmap_print_error_and_exit("arg_parse failed.");
 
-	init_scan_engine(&engine);
+	init_scan_engine(&engine, &opts);
 
-//	pcap_handle = pcap_get_handle();
 	engine.pcap_handle = get_pcap_handle();
-//	if (pcap_handle == NULL)
 	if (engine.pcap_handle == NULL)
 		nmap_print_error_and_exit("pcap_handle failed.");
 
-//	if (set_pcap_filter(pcap_handle, "src port 80"))
 	if (set_pcap_filter(engine.pcap_handle, "src google.com")) //TODO: eliminate this and scanf the filter str
 		nmap_print_error_and_exit("pcap_filter failed.");
 
@@ -1303,29 +1554,15 @@ main(int argc, char **argv)
 	init_probe_list(&engine, ports, num_ports);
 
 	set_local_sockaddr(&engine.source);
-/*
-	nmap = nmap_init();
-	if (nmap == NULL)
-		nmap_print_error_and_exit("initialisation failed.");
 
-	if (!number_of_ports)
-		ports = nmap_get_ports(DEFAULT_PORT_RANGE, &number_of_ports);
+	if (!opts.num_threads)
+		scan_ports(&engine, &opts, num_ports);
+	else
+		scan_ports_parallel(&engine, &opts, num_ports);
 
-	if (!scan_technique)
-		scan_technique = SCAN_ALL;
-
-	if (nmap_set_source_sockaddr(nmap))
-		exit(EXIT_FAILURE);
-*/
-//	nmap_run(nmap, pcap_handle, source);
-	scan_ports(&engine, &opts, num_ports);
-
-//	free(nmap);
-//	pcap_close(pcap_handle);
 	free(ports);
 	ft_lstclear(&engine.probe_list, free);
 	pcap_close(engine.pcap_handle);
 	free_scan_options(&opts);
-
 	return 0;
 }

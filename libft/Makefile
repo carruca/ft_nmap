@@ -25,6 +25,7 @@ LSOURCE = \
 		  ft_lstclear.c \
 		  ft_lstdelone.c \
 		  ft_lstiter.c \
+		  ft_lstiter_if.c \
 		  ft_lstlast.c \
 		  ft_lstmap.c \
 		  ft_lstsize.c \

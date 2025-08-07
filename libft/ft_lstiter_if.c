@@ -1,42 +1,24 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   ft_lsttoa_if.c                                     :+:      :+:    :+:   */
+/*   ft_lstiter_if.c                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: tsierra- <marvin@42.fr>                    +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2021/04/26 13:25:10 by tsierra-          #+#    #+#             */
-/*   Updated: 2021/05/20 17:14:50 by tsierra-         ###   ########.fr       */
+/*   Created: 2021/03/01 11:51:29 by tsierra-          #+#    #+#             */
+/*   Updated: 2021/03/01 11:52:58 by tsierra-         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "libft.h"
 
-char	**ft_lsttoa_if(t_list *lst, char *(*cpy)(), int (*cmp)())
+void	ft_lstiter_if(t_list *lst, void *cond,
+		int (*cmp)(), void (*f)(void *))
 {
-	char	**new;
-	int		counter;
-	int		i;
-
-	counter = ft_lstsize_if(lst, cmp);
-	new = calloc(counter + 1, sizeof(char *));
-	if (!new)
-		return (NULL);
-	i = 0;
-	while (i < counter)
+	while (lst)
 	{
-		if (cmp(lst->content))
-		{
-			new[i] = cpy(lst->content);
-			if (!new[i])
-			{
-				ft_free_tab(new);
-				return (NULL);
-			}
-			i++;
-		}
+		if (cmp(cond, lst->content) == 0)
+			f(lst->content);
 		lst = lst->next;
 	}
-	new[i] = NULL;
-	return (new);
 }
