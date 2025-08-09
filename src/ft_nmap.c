@@ -1149,6 +1149,24 @@ packet_worker_thread(void *arg)
 }
 
 void
+scan_engine_destroy(t_scan_engine *engine)
+{
+	if (engine->worker_threads)
+	{
+		free(engine->worker_threads);
+		engine->worker_threads = NULL;
+	}
+
+	if (engine->capture_queue)
+	{
+		packet_queue_destroy(engine->capture_queue);
+		engine->capture_queue = NULL;
+	}
+
+	pthread_mutex_destroy(&engine->engine_mutex);
+}
+
+void
 scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 {
 	struct timeval scan_start, scan_end;
@@ -1191,7 +1209,6 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 		usleep(1000);
 	}
 
-// TODO: check all callocs to destroy
 	engine->capture_active = 0;
 	engine->capture_queue->shutdown = 1;
 
@@ -1202,17 +1219,7 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
 		pthread_join(engine->worker_threads[pos], NULL);
 
-	if (engine->worker_threads)
-	{
-		free(engine->worker_threads);
-		engine->worker_threads = NULL;
-	}
-	if (engine->capture_queue)
-	{
-		packet_queue_destroy(engine->capture_queue);
-		engine->capture_queue = NULL;
-	}
-	pthread_mutex_destroy(&engine->engine_mutex);
+	scan_engine_destroy(t_scan_engine *engine)
 
 	if (gettimeofday(&scan_end, NULL) < 0)
 		error(EXIT_FAILURE, errno, "gettimeofday");
