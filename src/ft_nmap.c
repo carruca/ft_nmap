@@ -166,7 +166,6 @@ nmap_print_error_and_exit(char *error)
 }
 
 unsigned short *
-//nmap_get_ports(char *expr, unsigned int *number_of_ports)
 get_ports(char *expr, unsigned int *number_of_ports)
 {
 	unsigned short *ports;
@@ -318,14 +317,11 @@ free_port(void *port)
 }
 
 int
-//recv_packet(pcap_t *handle, short scan_type, unsigned short port, t_list **port_lst)
 recv_packet(pcap_t *handle, short scan_type, t_list **port_lst)
 {
 	(void)scan_type;
 	struct pcap_pkthdr *pkt_header;
-//	struct pcap_pkthdr *cpy_pkt_header;
 	const u_char *pkt_data;
-//	const u_char *cpy_pkt_data;
 	unsigned ip_hlen;
 	struct iphdr *ih;
 	struct tcphdr *th;
@@ -339,7 +335,6 @@ recv_packet(pcap_t *handle, short scan_type, t_list **port_lst)
 	int pcap_fd;
 	struct timeval timeout;
 
-//	serv = getservbyport(htons(port), "tcp");
 	serv = NULL;
 
 	pcap_fd = pcap_get_selectable_fd(handle);
@@ -355,10 +350,7 @@ recv_packet(pcap_t *handle, short scan_type, t_list **port_lst)
 		error(EXIT_FAILURE, errno, "select");
 	else if (nfds == 0)
 	{
-/*		new_port = init_port(port, IPPROTO_TCP, PORT_FILTERED, serv);
-		if (new_port)
-			ft_lstadd_back(port_lst, ft_lstnew(new_port));
-	*/	return 0;
+		return 0;
 	}
 
 	//TODO: we need to make a copy of pkt_header and pkt_data when using multithreads
@@ -882,14 +874,14 @@ cktimeout_probe_list(t_scan_engine *engine)
 			{
 				if (debugging)
 					printf("port %u timeout after %.2fs\n", probe->port, elapsed_time);
-	/*			if (probe->retries < MAX_RETRIES)
+/*				if (probe->retries < MAX_RETRIES)
 				{
 					++probe->retries;
 					probe->outstanding = 0;
 					--engine->outstanding_probes;
 				}
 				else
-	*/			{
+*/				{
 					probe->state = PORT_FILTERED;
 					probe->outstanding = 0;
 					--engine->outstanding_probes;
@@ -1166,6 +1158,103 @@ scan_engine_destroy(t_scan_engine *engine)
 	pthread_mutex_destroy(&engine->engine_mutex);
 }
 
+int
+get_probe_batch(t_scan_worker *worker, t_scan_engine *engine)
+{
+	t_list *current_node;
+	t_probe *probe;
+	int count;
+
+	count = 0;
+	current_node = engine->pending_probe_list;
+	while (current_node && count < PROBE_BATCH_MAXSIZE
+		&& engine->outstanding_probes < engine->max_outstanding)
+	{
+		probe = (t_probe *)current_node->content;
+		if (probe->state == PORT_UNKNOWN)
+		{
+			worker->probe_batch[count] = probe;
+			++count;
+			engine->pending_probe_list = current_node->next;
+		}
+		current_node = current_node->next;
+	}
+
+	return count;
+}
+
+int
+send_probe_batch(t_scan_worker *worker, t_scan_engine *engine, int batch_count)
+{
+	t_probe *probe;
+	int sent_count;
+
+	sent_count = 0;
+	for (int pos = 0; pos < batch_count; ++pos)
+	{
+		probe = worker->probe_batch[pos];
+
+		if (send_syn_probe(worker->tcp_socket, engine, engine->opts, probe) == 0)
+			++sent_count;
+	}
+	return sent_count;
+}
+
+void *
+send_worker_thread(void *arg)
+{
+	t_scan_worker *worker;
+	t_scan_engine *engine;
+	int batch_count, sent_count;
+
+	worker = (t_scan_worker *)arg;
+	engine = worker->engine;
+
+	while (worker->active)
+	{
+		pthread_mutex_lock(&engine->probe_mutex);
+
+		batch_count = get_probe_batch(worker, engine);
+
+		pthread_mutex_unlock(&engine->probe_mutex);
+
+		if (batch_count == 0)
+		{
+			if (engine->pending_probe_list == NULL
+				&& engine->outstanding_probes == 0)
+				break ;
+			else
+			{
+				usleep(1000);
+				continue;
+			}
+		}
+
+		sent_count = send_probe_batch(worker, engine, batch_count);
+
+		if (sent_count > 0)
+			usleep(1000 * sent_count);
+	}
+
+	return NULL;
+}
+
+int
+send_worker_create(t_scan_worker *worker, int id, t_scan_engine *engine)
+{
+	worker->thread_id = id;
+	worker->tcp_socket = get_raw_socket_by_protocol("tcp");
+	worker->active = 1;
+	worker->engine = engine;
+
+	if (pthread_create(&worker->thread, NULL, send_worker_thread, worker) != 0)
+	{
+		close(worker->tcp_socket);
+		return -1;
+	}
+	return 0;
+}
+
 void
 scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 {
@@ -1181,11 +1270,15 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 	print_scan_config(engine, opts, num_ports);
 
 	pthread_mutex_init(&engine->engine_mutex, NULL);
+	pthread_mutex_init(&engine->probe_mutex, NULL);
+
+	engine->pending_probe_list = engine->probe_list;
 
 	engine->capture_queue = packet_queue_create();
 	if (engine->capture_queue == NULL)
 		error(EXIT_FAILURE, errno, "capture_queue_create");
 
+	// TODO: unificar las dos cadenas de workers
 	engine->worker_threads = calloc(engine->opts->num_threads, sizeof(pthread_t));
 	if (engine->worker_threads == NULL)
 		error(EXIT_FAILURE, errno, "worker_threads_create");
@@ -1201,11 +1294,21 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 			error(EXIT_FAILURE, errno, "pthread_create");
 	}
 
+	engine->send_workers = calloc(engine->opts->num_threads, sizeof(t_scan_worker));
+	if (engine->send_workers == NULL)
+		error(EXIT_FAILURE, errno, "send_workers_create");
+
+	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
+	{
+		if (send_worker_create(&engine->send_workers[pos], pos, engine) != 0)
+			error(EXIT_FAILURE, errno, "send_worker_create");
+	}
+
 	while (engine->completed_probes < engine->total_probes)
 	{
-		send_probe_list(engine, opts);
-
+		pthread_mutex_lock(&engine->engine_mutex);
 		cktimeout_probe_list(engine);
+		pthread_mutex_unlock(&engine->engine_mutex);
 		usleep(1000);
 	}
 
@@ -1219,7 +1322,18 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
 		pthread_join(engine->worker_threads[pos], NULL);
 
-	scan_engine_destroy(t_scan_engine *engine)
+	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
+		engine->send_workers[pos].active = 0;
+
+	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
+	{
+		pthread_join(engine->send_workers[pos].thread, NULL);
+		close(engine->send_workers[pos].tcp_socket);
+	}
+
+	free(engine->send_workers);
+
+	scan_engine_destroy(engine);
 
 	if (gettimeofday(&scan_end, NULL) < 0)
 		error(EXIT_FAILURE, errno, "gettimeofday");
@@ -1237,7 +1351,7 @@ print_usage_and_exit(char *name)
 	printf("%s [OPTIONS]\n"
     "--help        Print this help screen\n"
 		"--ports       Ports to scan (ex: '-p 1-10' or '-p 1,2,3' or '-p 1,5-15')\n"
-    "--ip          IP addresses to scan in dot format\n"
+    "--ip          IP address to scan in dot format\n"
     "--file        File name containing IP addresses to scan\n"
     "--speedup     [max 250] number of parallel threads to use\n"
     "--scan        Scan type: SYN/NULL/FIN/XMAS/ACK/UDP\n",
@@ -1311,32 +1425,24 @@ parse_args(int argc, char **argv, t_scan_options *opts, int *arg_index)
 		{
 			case 'p':
 				if (opts->portlist)
-		//		if (ports)
 					nmap_print_error_and_exit("only one --ports option allowed, separate multiples ranges with commas.");
-		//		ports = nmap_get_ports(optarg, &number_of_ports);
 				opts->portlist = strdup(optarg);
 				break;
 			case 'i':
-		//		if (source)
 				if (opts->target)
 					nmap_print_error_and_exit("you can only use --ip option once.");
-		//		source = optarg;
 				opts->target = strdup(optarg);
 				break;
 			case 'f':
-		//		filename = optarg;
 				opts->filename = strdup(optarg);
 				break;
 			case 's':
 				opts->num_threads = atoi(optarg);
-		//		number_of_threads = atoi(optarg);
 				if (number_of_threads > MAXTHREADS)
 					nmap_print_error_and_exit("speedup exceeded.");
 				break;
 			case 'S':
-		//		scan_technique = nmap_get_scan_technique_by_name(optarg);
 				opts->scan_flag = nmap_get_scan_technique_by_name(optarg);
-		//		if (scan_technique == 0)
 				if (opts->scan_flag == 0)
 					nmap_print_error_and_exit("scan flag is invalid.");
 				break;
@@ -1351,13 +1457,11 @@ parse_args(int argc, char **argv, t_scan_options *opts, int *arg_index)
 		}
 	}
 
-//	if (filename && source)
 	if (opts->target && opts->filename)
 		nmap_print_error_and_exit("--ip and --file options cannot be used at the same time.");
 
-//	if (filename)
 	if (opts->filename)
-		nmap_ip_file_parse(filename);
+		nmap_ip_file_parse(opts->filename);
 
 	*arg_index = optind;
 	return 0;
@@ -1490,7 +1594,7 @@ init_scan_engine(t_scan_engine *e, t_scan_options *opts)
 {
 	memset(e, 0, sizeof(t_scan_engine));
 
-	e->max_outstanding = 100;
+	e->max_outstanding = 500;
 	e->global_timing.timeout = 2.0;
 	e->opts = opts;
 }
@@ -1540,6 +1644,7 @@ main(int argc, char **argv)
 	t_scan_engine engine;
 	unsigned short *ports;
 	unsigned int num_ports;
+	char filter_str[256];
 
 	memset(&opts, 0, sizeof(t_scan_options));
 	opts.scan_flag = SCAN_ALL;
@@ -1553,10 +1658,11 @@ main(int argc, char **argv)
 	if (engine.pcap_handle == NULL)
 		nmap_print_error_and_exit("pcap_handle failed.");
 
-	if (set_pcap_filter(engine.pcap_handle, "src google.com")) //TODO: eliminate this and scanf the filter str
+	snprintf(filter_str, sizeof(filter_str), "src %s and tcp", opts.target);
+	if (set_pcap_filter(engine.pcap_handle, filter_str))
 		nmap_print_error_and_exit("pcap_filter failed.");
 
-	ports = get_ports( opts.portlist ? opts.portlist : DEFAULT_PORT_RANGE, &num_ports);
+	ports = get_ports((opts.portlist) ? opts.portlist : DEFAULT_PORT_RANGE, &num_ports);
 
 	init_probe_list(&engine, ports, num_ports);
 

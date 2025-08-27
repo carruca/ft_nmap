@@ -37,6 +37,7 @@
 # define MAX_RETRIES 3
 # define MAX_PORTSTATES 7
 # define MAX_PKTQUEUE 1024
+# define PROBE_BATCH_MAXSIZE 10
 
 struct nmap_data
 {
@@ -145,6 +146,8 @@ struct s_scan_options
 
 typedef struct s_scan_options t_scan_options;
 
+typedef struct s_scan_worker t_scan_worker;
+
 struct s_scan_engine
 {
   int raw_socket;
@@ -154,6 +157,7 @@ struct s_scan_engine
   unsigned int completed_probes;
   t_scan_options *opts;
   t_list *probe_list;
+  t_list *pending_probe_list;
   pcap_t *pcap_handle;
   struct sockaddr_in source;
   struct sockaddr_in target;
@@ -163,9 +167,31 @@ struct s_scan_engine
   t_packet_queue *capture_queue;
   pthread_t capture_thread;
   pthread_t *worker_threads;
+
+  t_scan_worker *send_workers;
+
   pthread_mutex_t engine_mutex;
+  pthread_mutex_t probe_mutex;
 };
 
 typedef struct s_scan_engine t_scan_engine;
+
+struct s_scan_worker
+{
+  int thread_id;
+  int tcp_socket;
+  pthread_t thread;
+
+  t_probe *probe_batch[PROBE_BATCH_MAXSIZE];
+  /*
+  char packet_tcp_template[sizeof(struct tcphdr)];
+  size_t template_size;
+*/
+  int active;
+
+  t_scan_engine *engine;
+};
+
+typedef struct s_scan_worker t_scan_worker;
 
 #endif
