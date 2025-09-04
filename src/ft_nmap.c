@@ -171,7 +171,7 @@ get_ports(char *expr, unsigned int *number_of_ports)
 	unsigned short *ports;
 	int count, start, end;
 	char *next, *dash;
-	char checks[MAXPORTS + 1];
+	char checks[USHRT_MAX + 1];
 
 	ports = malloc(MAXPORTS * sizeof(unsigned short));
 	if (ports == NULL)
@@ -198,10 +198,10 @@ get_ports(char *expr, unsigned int *number_of_ports)
 			if (dash && *(dash + 1))
 				end = atoi(dash + 1);
 			else if (dash && !*(dash + 1))
-				end = MAXPORTS;
+				end = start + MAXPORTS - 1;
 		}
 
-		if (start < MINPORTS || start > end || end > MAXPORTS)
+		if (start < MINPORTS || start > end || end > USHRT_MAX)
 			nmap_print_error_and_exit("port range is invalid.");
 
 		for (int i = start; i <= end; ++i)
@@ -829,6 +829,12 @@ cmp_probe_state(t_port_state *state, t_probe *probe)
 	return probe->state != *state;
 }
 
+int
+equal_probe_state(t_port_state *state, t_probe *probe)
+{
+	return probe->state == *state;
+}
+
 void
 print_probe_list_if(t_port_state state, t_list *probe_list)
 {
@@ -842,12 +848,13 @@ print_scan_results(t_scan_engine *engine)
 		inet_ntoa(engine->target.sin_addr));
 	printf("\n");
 	printf("%-9s %-9s %-s\n", "PORT", "STATE", "SERVICE");
-	print_probe_list_if(PORT_OPEN, engine->probe_list);
+	ft_lstiter(engine->probe_list, print_probe);
+/*	print_probe_list_if(PORT_OPEN, engine->probe_list);
 	print_probe_list_if(PORT_CLOSED, engine->probe_list);
 	print_probe_list_if(PORT_FILTERED, engine->probe_list);
 	print_probe_list_if(PORT_UNFILTERED, engine->probe_list);
 	print_probe_list_if(PORT_OPENFILTERED, engine->probe_list);
-}
+*/}
 
 void
 cktimeout_probe_list(t_scan_engine *engine)
@@ -1155,6 +1162,7 @@ scan_engine_destroy(t_scan_engine *engine)
 		engine->capture_queue = NULL;
 	}
 
+	pthread_mutex_destroy(&engine->probe_mutex);
 	pthread_mutex_destroy(&engine->engine_mutex);
 }
 
@@ -1264,6 +1272,7 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 	if (gettimeofday(&scan_start, NULL) < 0)
 		error(EXIT_FAILURE, errno, "gettimeofday");
 
+	//init scan
 	if (set_sockaddr_by_hostname(&engine->target, opts->target))
 		exit(EXIT_FAILURE);
 
@@ -1309,18 +1318,9 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 		pthread_mutex_lock(&engine->engine_mutex);
 		cktimeout_probe_list(engine);
 		pthread_mutex_unlock(&engine->engine_mutex);
+
 		usleep(1000);
 	}
-
-	engine->capture_active = 0;
-	engine->capture_queue->shutdown = 1;
-
-	pthread_cond_broadcast(&engine->capture_queue->not_empty);
-	pthread_cond_broadcast(&engine->capture_queue->not_full);
-
-	pthread_join(engine->capture_thread, NULL);
-	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
-		pthread_join(engine->worker_threads[pos], NULL);
 
 	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
 		engine->send_workers[pos].active = 0;
@@ -1332,6 +1332,16 @@ scan_ports_parallel(t_scan_engine *engine, t_scan_options *opts, int num_ports)
 	}
 
 	free(engine->send_workers);
+
+	engine->capture_active = 0;
+	engine->capture_queue->shutdown = 1;
+
+	pthread_cond_broadcast(&engine->capture_queue->not_empty);
+	pthread_cond_broadcast(&engine->capture_queue->not_full);
+
+	pthread_join(engine->capture_thread, NULL);
+	for (unsigned short pos = 0; pos < engine->opts->num_threads; ++pos)
+		pthread_join(engine->worker_threads[pos], NULL);
 
 	scan_engine_destroy(engine);
 
@@ -1533,14 +1543,7 @@ get_pcap_handle()
 			pcap_geterr(pcap_handle));
 		exit(EXIT_FAILURE);
 	}
-/*
-	if (pcap_set_immediate_mode(pcap_handle, 1) != 0)
-	{
-		fprintf(stderr, "Couldn't set immediate mode: %s\n",
-			pcap_geterr(pcap_handle));
-		exit(EXIT_FAILURE);
-	}
-*/
+
 	if (pcap_setnonblock(pcap_handle, 1, errbuf) == PCAP_ERROR)
 	{
 		fprintf(stderr, "Couldn't set non-blocking mode: %s\n",
@@ -1590,11 +1593,11 @@ set_pcap_filter(pcap_t *pcap_handle, char *filter_exp)
 }
 
 void
-init_scan_engine(t_scan_engine *e, t_scan_options *opts)
+scan_engine_init(t_scan_engine *e, t_scan_options *opts)
 {
 	memset(e, 0, sizeof(t_scan_engine));
 
-	e->max_outstanding = 500;
+	e->max_outstanding = 1024;
 	e->global_timing.timeout = 2.0;
 	e->opts = opts;
 }
@@ -1608,7 +1611,7 @@ free_scan_options(t_scan_options *opts)
 }
 
 void
-init_probe_list(t_scan_engine *engine, unsigned short *ports, unsigned int num_ports)
+probe_list_create(t_scan_engine *engine, unsigned short *ports, unsigned int num_ports)
 {
 	for (unsigned int pos = 0; pos < num_ports; ++pos)
 	{
@@ -1652,19 +1655,20 @@ main(int argc, char **argv)
 	if (parse_args(argc, argv, &opts, &arg_index))
 		nmap_print_error_and_exit("arg_parse failed.");
 
-	init_scan_engine(&engine, &opts);
+	scan_engine_init(&engine, &opts);
 
 	engine.pcap_handle = get_pcap_handle();
 	if (engine.pcap_handle == NULL)
 		nmap_print_error_and_exit("pcap_handle failed.");
 
-	snprintf(filter_str, sizeof(filter_str), "src %s and tcp", opts.target);
+	snprintf(filter_str, sizeof(filter_str), "src %s and portrange %s",
+		opts.target, (opts.portlist) ? opts.portlist : DEFAULT_PORT_RANGE);
 	if (set_pcap_filter(engine.pcap_handle, filter_str))
 		nmap_print_error_and_exit("pcap_filter failed.");
 
 	ports = get_ports((opts.portlist) ? opts.portlist : DEFAULT_PORT_RANGE, &num_ports);
 
-	init_probe_list(&engine, ports, num_ports);
+	probe_list_create(&engine, ports, num_ports);
 
 	set_local_sockaddr(&engine.source);
 

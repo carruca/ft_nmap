@@ -33,7 +33,7 @@ print:
 	echo $(SRCS)
 	echo $(OBJS)
 
-config: $(NAME)
+own: $(NAME)
 	sudo chown root:root $(NAME)
 	sudo chmod u+s $(NAME)
 
