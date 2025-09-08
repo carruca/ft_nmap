@@ -1,18 +1,24 @@
 NAME    	= ft_nmap
 
+INCSPATH  = inc/
 SRCSPATH	= src/
 OBJSPATH	= obj/
-SRCSFILES	= \
-						ft_nmap.c
+
+SRCSFILES	=               \
+						nmap.c 				\
+						ft_nmap.c			\
+
+
 SRCS			= $(addprefix $(SRCSPATH), $(SRCSFILES))
 OBJS			= $(patsubst $(SRCSPATH)%, $(OBJSPATH)%, $(SRCS:.c=.o))
+DEPS			= $(OBJS:.o=.d)
 
 LIBFTPATH	= libft/
 LIBFT			= $(LIBFTPATH)/libft.a
 
 CC      	= gcc
-CFLAGS  	= -Wall -Werror -Wextra
-INC 			= -I. -I$(LIBFTPATH)
+CFLAGS  	= -Wall -Werror -Wextra -MMD
+INC 			= -I$(INCSPATH) -I$(LIBFTPATH)
 LDFLAGS 	= -lm -lpcap -lpthread -L $(LIBFTPATH) -lft
 FSANITIZE = -g3 -fsanitize=address -fsanitize=leak -fsanitize=undefined -fsanitize=bounds -fsanitize=null
 
@@ -53,5 +59,8 @@ fclean: clean
 	$(RM) $(NAME)
 
 re: fclean all
+
+-include $(DEPS)
+
 
 .SILENT: $(SILENT)
