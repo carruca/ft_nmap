@@ -13,9 +13,9 @@ SRCSFILES	= \
 						get_program_name.c \
 						get_raw_socket_by_protocol.c \
 						get_scan_mode.c \
-						nmap_get_scan_technique_by_name.c \
+						get_scan_type_by_name.c \
 						nmap_ip_file_parse.c \
-						nmap_print_error_and_exit.c \
+						print_error_and_exit.c \
 						packet_capture_thread.c \
 						packet_create.c \
 						packet_dequeue.c \
@@ -26,7 +26,7 @@ SRCSFILES	= \
 						packet_queue_handler.c \
 						packet_response.c \
 						packet_worker_thread.c \
-						parse_args.c \
+						scan_options_parse.c \
 						print_usage_and_exit.c \
 						probe_list_create.c \
 						scan_probe_list_destroy.c \
@@ -34,18 +34,19 @@ SRCSFILES	= \
 						probe_print.c \
 						probe_syn_send.c \
 						probe_update.c \
-						scan_engine_config_print.c \
-						scan_engine_destroy.c \
-						scan_engine_init.c \
-						scan_engine_results_print.c \
-						scan_options_free.c \
+						scan_config_print.c \
+						scan_destroy.c \
+						scan_init.c \
+						scan_results_print.c \
+						scan_options_destroy.c \
 						scan_ports.c \
 						scan_ports_parallel.c \
+						scan_run.c \
 						send_probe_batch.c \
 						send_probe_list.c \
 						send_worker_create.c \
 						send_worker_thread.c \
-						set_local_sockaddr.c \
+						scan_local_sockaddr_set.c \
 						set_pcap_filter.c \
 						set_socketaddr_by_hostname.c \
 						tcp_checksum.c \
@@ -60,7 +61,7 @@ LIBFTPATH	= libft/
 LIBFT			= $(LIBFTPATH)/libft.a
 
 CC      	= gcc
-CFLAGS  	= -Wall -Werror -Wextra -MMD
+CFLAGS  	= -Wall -Werror -Wextra -MMD -Wunused
 INC 			= -I$(INCSPATH) -I$(LIBFTPATH)
 LDFLAGS 	= -lm -lpcap -lpthread -L $(LIBFTPATH) -lft
 FSANITIZE = -g3 -fsanitize=address -fsanitize=leak -fsanitize=undefined -fsanitize=bounds -fsanitize=null
@@ -87,6 +88,7 @@ own: $(NAME)
 	sudo chmod u+s $(NAME)
 
 sanitize: LDFLAGS += $(FSANITIZE)
+sanitize: CFLAGS += $(FSANITIZE)
 sanitize: $(NAME)
 
 tag:

@@ -1,7 +1,7 @@
 #include "ft_nmap.h"
 
 void
-print_scan_results(t_scan_ctx *engine)
+scan_results_print(t_scan_ctx *engine)
 {
 	printf("IP address: %s\n",
 		inet_ntoa(engine->target.sin_addr));

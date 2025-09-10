@@ -23,25 +23,6 @@
 
 # define MAXSCANS   1
 
-//# define SCAN_SYN   0x0001
-//# define SCAN_NULL  0x0002
-//# define SCAN_FIN   0x0004
-//# define SCAN_XMAS  0x0008
-//# define SCAN_ACK   0x0010
-//# define SCAN_UDP   0x0020
-//# define SCAN_ALL   SCAN_SYN | SCAN_NULL | SCAN_FIN | SCAN_XMAS | SCAN_ACK | SCAN_UDP
-
-typedef enum e_scan_type
-{
-    SCAN_SYN = 0x0001,
-    SCAN_NULL = 0x0002,
-    SCAN_FIN = 0x0004,
-    SCAN_XMAS = 0x0008,
-    SCAN_ACK = 0x0010,
-    SCAN_UDP = 0x0020,
-    SCAN_ALL = 0x003f, 
-} t_scan_type;
-
 # define MAXPORTS 	1024
 # define MINPORTS 						1
 
@@ -61,6 +42,18 @@ typedef enum e_scan_type
 # define PROMISC_TRUE				1
 # define PROMISC_FALSE 			0
 # define ETH0 								1
+
+typedef enum e_scan_type
+{
+    SCAN_UNDEFINED = 0x0000,
+    SCAN_SYN = 0x0001,
+    SCAN_NULL = 0x0002,
+    SCAN_FIN = 0x0004,
+    SCAN_XMAS = 0x0008,
+    SCAN_ACK = 0x0010,
+    SCAN_UDP = 0x0020,
+    SCAN_ALL = 0x003f, 
+} t_scan_type;
 
 struct nmap_data
 {
@@ -159,19 +152,20 @@ typedef struct s_packet_queue t_packet_queue;
 struct s_scan_options
 {
   unsigned short num_threads;
-  short scan_flag;
+  t_scan_type scan_flag;
   int verbose;
   int debugging;
   char *target;
   char *filename;
   char *portlist;
+  char *program_name;
 };
 
 typedef struct s_scan_options t_scan_options;
 
 typedef struct s_scan_worker t_scan_worker;
 
-struct s_scan
+struct s_scan_ctx
 {
   int raw_socket;
   unsigned int total_probes;
@@ -197,7 +191,7 @@ struct s_scan
   pthread_mutex_t probe_mutex;
 };
 
-typedef struct s_scan t_scan_ctx;
+typedef struct s_scan_ctx t_scan_ctx;
 
 struct s_scan_worker
 {
@@ -218,13 +212,13 @@ struct s_scan_worker
 typedef struct s_scan_worker t_scan_worker;
 
 pcap_t *get_pcap_handle();
-void scan_probe_list_create(t_scan_ctx *scan_ctx, unsigned short *ports, unsigned int num_ports);
+void scan_probe_list_create(t_scan_ctx *scan_ctx, unsigned short *ports, unsigned short num_ports);
 void scan_probe_list_destroy(t_scan_ctx *scan_ctx);
 void scan_options_destroy(t_scan_options *opts);
-void scan_init(t_scan_ctx *e);
+void scan_init(t_scan_ctx *scan_ctx, const char *path);
 int set_pcap_filter(pcap_t *pcap_handle, char *filter_exp);
-int scan_options_parse(t_scan_options *opts, int *arg_index, int argc, char **argv);
-short nmap_get_scan_technique_by_name(char *expr);
+int scan_options_parse(t_scan_ctx *scan_ctx, int *arg_index, int argc, char **argv);
+t_scan_type get_scan_type_by_name(char *expr);
 char *get_program_name(char *arg);
 void nmap_ip_file_parse(const char *filename);
 void print_usage_and_exit(char *name);
@@ -233,7 +227,7 @@ int send_worker_create(t_scan_worker *worker, int id, t_scan_ctx *scan_ctx);
 void *send_worker_thread(void *arg);
 int send_probe_batch(t_scan_worker *worker, t_scan_ctx *scan_ctx, int batch_count);
 int get_probe_batch(t_scan_worker *worker, t_scan_ctx *scan_ctx);
-void scan_engine_destroy(t_scan_ctx *scan_ctx);
+void scan_destroy(t_scan_ctx *scan_ctx);
 void *packet_worker_thread(void *arg);
 void *packet_capture_thread(void *arg);
 t_packet_queue *packet_queue_create();
@@ -245,7 +239,7 @@ t_packet *packet_dequeue(t_packet_queue *queue);
 int packet_enqueue(t_packet_queue *queue, t_packet *pkt);
 void scan_ports(t_scan_ctx *scan_ctx, int num_ports);
 void probe_list_timeout(t_scan_ctx *scan_ctx);
-void print_scan_results(t_scan_ctx *scan_ctx);
+void scan_results_print(t_scan_ctx *scan_ctx);
 void print_probe_list_if(t_port_state state, t_list *probe_list);
 int cmp_probe_state(t_port_state *state, t_probe *probe);
 void print_probe(void *content);
@@ -254,10 +248,11 @@ int get_raw_socket_by_protocol(const char *protocol_name);
 int send_syn_probe(int raw_socket, t_scan_ctx *scan_ctx, t_probe *probe);
 int nmap_xmit(struct nmap_data *nmap, short scan_type, unsigned short port);
 int nmap_set_source_sockaddr(struct nmap_data *nmap);
-int set_local_sockaddr(struct sockaddr_in *sockaddr);
+int scan_local_sockaddr_set(struct sockaddr_in *sockaddr);
 int nmap_set_dst_sockaddr(struct nmap_data *nmap, const char *hostname);
 int set_sockaddr_by_hostname(struct sockaddr_in *sockaddr, const char *hostname);
-void scan_engine_config_print(const t_scan_ctx *scan_ctx, int num_ports);
+void scan_config_print(const t_scan_ctx *scan_ctx, int num_ports);
+void scan_run(t_scan_ctx *scan_ctx);
 int syn_encode_and_send(char *buffer, size_t bufsize, struct sockaddr_in *src_sockaddr, struct sockaddr_in *dst_sockaddr, short port, int sockfd);
 unsigned short tcp_checksum(const struct sockaddr_in *src_sockaddr, const struct sockaddr_in *dst_sockaddr, const struct tcphdr *th);
 unsigned short checksum(char *buffer, size_t bufsize);
@@ -268,11 +263,14 @@ void port_destroy(void *port);
 t_port *init_port(unsigned short s_port, unsigned char protocol, short state, struct servent *serv);
 int print_pkt_header(struct pcap_pkthdr *pkt_header);
 unsigned short *get_ports(char *expr, unsigned int *number_of_ports);
-void nmap_print_error_and_exit(char *error);
+void print_error(char *program_name, char *error);
+void print_error_and_exit(char *program_name, char *error);
 void print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes);
 uint16_t handle_ethernet(const u_char *bytes);
 void tvsub(struct timeval *out, struct timeval *in);
 
 const struct scan_mode *get_scan_mode(int index);
+void scan_program_name_set(t_scan_ctx *scan_ctx, const char *program_name);
+t_scan_ctx *scan_create();
 
 #endif

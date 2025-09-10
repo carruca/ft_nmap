@@ -1,7 +1,7 @@
 #include "ft_nmap.h"
 
-short
-nmap_get_scan_technique_by_name(char *expr)
+t_scan_type
+get_scan_type_by_name(char *expr)
 {
 	const struct scan_mode *mode;
 

@@ -392,7 +392,7 @@ nmap_set_dst_sockaddr(struct nmap_data *nmap, const char *hostname)
 int
 nmap_set_source_sockaddr(struct nmap_data *nmap)
 {
-	return set_local_sockaddr(&nmap->src_sockaddr);
+	return scan_local_sockaddr_set(&nmap->src_sockaddr);
 }
 
 int

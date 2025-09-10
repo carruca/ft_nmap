@@ -20,7 +20,7 @@ scan_ports(t_scan_ctx *scan_ctx, int num_ports)
 	if (set_sockaddr_by_hostname(&scan_ctx->target, scan_ctx->opts.target))
 		exit(EXIT_FAILURE);
 
-	scan_engine_config_print(scan_ctx, num_ports);
+	scan_config_print(scan_ctx, num_ports);
 
 	while (scan_ctx->completed_probes < scan_ctx->total_probes)
 	{
@@ -55,5 +55,5 @@ scan_ports(t_scan_ctx *scan_ctx, int num_ports)
 		+ (double)scan_end.tv_usec / 1000000.0;
 
 	printf("Scan took %.2f secs\n", total_time);
-	print_scan_results(scan_ctx);
+	scan_results_print(scan_ctx);
 }

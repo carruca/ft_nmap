@@ -39,7 +39,7 @@ get_ports(char *expr, unsigned int *number_of_ports)
 		}
 
 		if (start < MINPORTS || start > end || end > USHRT_MAX)
-			nmap_print_error_and_exit("port range is invalid.");
+			print_error_and_exit("", "port range is invalid.");
 
 		for (int i = start; i <= end; ++i)
 		{

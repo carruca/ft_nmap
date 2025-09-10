@@ -1,7 +1,7 @@
 #include "ft_nmap.h"
 
 void
-scan_probe_list_create(t_scan_ctx *engine, unsigned short *ports, unsigned int num_ports)
+scan_probe_list_create(t_scan_ctx *scan_ctx, unsigned short *ports, unsigned short num_ports)
 {
 	for (unsigned int pos = 0; pos < num_ports; ++pos)
 	{
@@ -15,7 +15,7 @@ scan_probe_list_create(t_scan_ctx *engine, unsigned short *ports, unsigned int n
 		memset(probe, 0, sizeof(t_probe));
 		probe->port = ports[pos];
 		probe->state = PORT_UNKNOWN;
-		probe->timing.timeout = engine->global_timing.timeout;
+		probe->timing.timeout = scan_ctx->global_timing.timeout;
 
 		node = ft_lstnew(probe);
 		if (node == NULL)
@@ -24,7 +24,7 @@ scan_probe_list_create(t_scan_ctx *engine, unsigned short *ports, unsigned int n
 			continue ;
 		}
 
-		ft_lstadd_back(&engine->probe_list, node);
-		++engine->total_probes;
+		ft_lstadd_back(&scan_ctx->probe_list, node);
+		++scan_ctx->total_probes;
 	}
 }

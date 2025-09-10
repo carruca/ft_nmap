@@ -11,7 +11,7 @@ nmap_ip_file_parse(const char *filename)
  */
 	stream = fopen(filename, "r");
 	if (stream == NULL)
-		nmap_print_error_and_exit("fopen: not able to open the file.");
+		print_error_and_exit("", "fopen: not able to open the file.");
 
 	while (fgets(nextline, sizeof(nextline), stream))
 	fclose(stream);

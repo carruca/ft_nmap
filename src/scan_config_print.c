@@ -1,7 +1,7 @@
 #include "ft_nmap.h"
 
 void
-scan_engine_config_print(const t_scan_ctx *scan_ctx, int num_ports)
+scan_config_print(const t_scan_ctx *scan_ctx, int num_ports)
 {
 	const struct scan_mode *mode;
 

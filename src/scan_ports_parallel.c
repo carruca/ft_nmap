@@ -17,7 +17,7 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 	if (set_sockaddr_by_hostname(&scan_ctx->target, scan_ctx->opts.target))
 		exit(EXIT_FAILURE);
 
-	scan_engine_config_print(scan_ctx, num_ports);
+	scan_config_print(scan_ctx, num_ports);
 
 	pthread_mutex_init(&scan_ctx->engine_mutex, NULL);
 	pthread_mutex_init(&scan_ctx->probe_mutex, NULL);
@@ -84,7 +84,7 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 	for (unsigned short pos = 0; pos < scan_ctx->opts.num_threads; ++pos)
 		pthread_join(scan_ctx->worker_threads[pos], NULL);
 
-	scan_engine_destroy(scan_ctx);
+	scan_destroy(scan_ctx);
 
 	if (gettimeofday(&scan_end, NULL) < 0)
 		error(EXIT_FAILURE, errno, "gettimeofday");
@@ -93,5 +93,5 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 		+ (double)scan_end.tv_usec / 1000000.0;
 
 	printf("Scan took %.2f secs\n", total_time);
-	print_scan_results(scan_ctx);
+	scan_results_print(scan_ctx);
 }
