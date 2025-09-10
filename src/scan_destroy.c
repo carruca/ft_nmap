@@ -21,6 +21,5 @@ scan_destroy(t_scan_ctx *scan_ctx)
 	pthread_mutex_destroy(&scan_ctx->engine_mutex);
 	scan_probe_list_destroy(scan_ctx);
 	scan_options_destroy(&scan_ctx->opts);
-	free(scan_ctx->program_name);
 	free(scan_ctx);
 }

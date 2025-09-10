@@ -17,11 +17,12 @@ void *thread_start(void *data)
 */
 }
 
-void scan_run(t_scan_ctx *scan_ctx)
+void scan_run(t_scan_ctx *scan_ctx, t_scan_options *scan_options)
 {
     unsigned short *ports;
     unsigned short num_ports;
 
+	scan_ctx->opts = scan_options;
 	scan_local_sockaddr_set(&scan_ctx->source);
 
 	ports = get_ports((scan_ctx->opts.portlist) ? scan_ctx->opts.portlist : DEFAULT_PORT_RANGE, &num_ports);

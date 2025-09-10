@@ -6,7 +6,8 @@ OBJSPATH	= obj/
 
 SRCSFILES	= \
 						checksum.c \
-						ft_nmap.c	\
+						error.c \
+						ft_nmap.c \
 						get_pcap_handler.c \
 						get_ports.c \
 						get_probe_batch.c \
@@ -107,5 +108,11 @@ re: fclean all
 
 -include $(DEPS)
 
+docker:
+	docker compose -f docker/docker-compose.yml up -d --build
+
+sh:
+	docker compose -f docker/docker-compose.yml exec nmap_develop sh
 
 .SILENT: $(SILENT)
+.PHONY: docker sh

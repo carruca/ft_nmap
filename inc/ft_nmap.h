@@ -17,7 +17,7 @@
 # include <netinet/ip_icmp.h>
 # include <netinet/tcp.h>
 # include <netdb.h>
-# include <error.h>
+//# include <error.h>
 # include <stdlib.h>
 # include <limits.h>
 
@@ -172,7 +172,7 @@ struct s_scan_ctx
   unsigned int outstanding_probes;
   unsigned int max_outstanding;
   unsigned int completed_probes;
-  t_scan_options opts;
+  t_scan_options *opts;
   t_list *probe_list;
   t_list *pending_probe_list;
   pcap_t *pcap_handle;
@@ -215,9 +215,9 @@ pcap_t *get_pcap_handle();
 void scan_probe_list_create(t_scan_ctx *scan_ctx, unsigned short *ports, unsigned short num_ports);
 void scan_probe_list_destroy(t_scan_ctx *scan_ctx);
 void scan_options_destroy(t_scan_options *opts);
-void scan_init(t_scan_ctx *scan_ctx, const char *path);
+void scan_init(t_scan_ctx *scan_ctx);
 int set_pcap_filter(pcap_t *pcap_handle, char *filter_exp);
-int scan_options_parse(t_scan_ctx *scan_ctx, int *arg_index, int argc, char **argv);
+void scan_options_parse(t_scan_options *scan_options, int *arg_index, int argc, char **argv);
 t_scan_type get_scan_type_by_name(char *expr);
 char *get_program_name(char *arg);
 void nmap_ip_file_parse(const char *filename);
@@ -252,7 +252,6 @@ int scan_local_sockaddr_set(struct sockaddr_in *sockaddr);
 int nmap_set_dst_sockaddr(struct nmap_data *nmap, const char *hostname);
 int set_sockaddr_by_hostname(struct sockaddr_in *sockaddr, const char *hostname);
 void scan_config_print(const t_scan_ctx *scan_ctx, int num_ports);
-void scan_run(t_scan_ctx *scan_ctx);
 int syn_encode_and_send(char *buffer, size_t bufsize, struct sockaddr_in *src_sockaddr, struct sockaddr_in *dst_sockaddr, short port, int sockfd);
 unsigned short tcp_checksum(const struct sockaddr_in *src_sockaddr, const struct sockaddr_in *dst_sockaddr, const struct tcphdr *th);
 unsigned short checksum(char *buffer, size_t bufsize);
@@ -269,8 +268,10 @@ void print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes);
 uint16_t handle_ethernet(const u_char *bytes);
 void tvsub(struct timeval *out, struct timeval *in);
 
+void error(int status, int errnum, const char *format, ...);
 const struct scan_mode *get_scan_mode(int index);
-void scan_program_name_set(t_scan_ctx *scan_ctx, const char *program_name);
+void scan_run(t_scan_ctx *scan_ctx, t_scan_options *scan_options);
+void scan_program_name_set(t_scan_options *scan_options, const char *program_name);
 t_scan_ctx *scan_create();
 
 #endif
