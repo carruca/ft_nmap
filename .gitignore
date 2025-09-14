@@ -1,0 +1,7 @@
+.cache
+.clangd
+compile_commands.json
+*.o
+*.d
+*.a
+tags
