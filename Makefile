@@ -10,8 +10,8 @@ OBJS			= $(patsubst $(SRCSPATH)%, $(OBJSPATH)%, $(SRCS:.c=.o))
 LIBFTPATH	= libft/
 LIBFT			= $(LIBFTPATH)/libft.a
 
-CC      	= gcc
-CFLAGS  	= -Wall -Werror -Wextra
+CC      	= clang
+CFLAGS  	= -Wall -Werror -Wextra -D_DEFAULT_SOURCE
 INC 			= -I. -I$(LIBFTPATH)
 LDFLAGS 	= -lm -lpcap -lpthread -L $(LIBFTPATH) -lft
 FSANITIZE = -g3 -fsanitize=address -fsanitize=leak -fsanitize=undefined -fsanitize=bounds -fsanitize=null

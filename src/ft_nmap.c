@@ -80,7 +80,7 @@ handle_ethernet(const u_char *bytes)
 }
 
 void
-print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes)
+print_packet_info(const struct pcap_pkthdr *header, const uint8_t *bytes)
 {
 	struct iphdr *ip;
 	struct tcphdr *th;

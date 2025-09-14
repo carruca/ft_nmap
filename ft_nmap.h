@@ -2,36 +2,33 @@
 # define FT_NMAP_H
 
 # include "libft.h"
-# include <pcap.h>
-# include <pthread.h>
-# include <sys/types.h>
-# include <sys/time.h>
-# include <sys/select.h>
-# include <sys/socket.h>
 # include <arpa/inet.h>
-# include <stdio.h>
-# include <errno.h>
-# include <string.h>
-# include <unistd.h>
+# include <error.h>
+# include <netdb.h>
 # include <netinet/ether.h>
 # include <netinet/ip.h>
 # include <netinet/ip_icmp.h>
 # include <netinet/tcp.h>
-# include <netdb.h>
-# include <error.h>
-# include <math.h>
-# include <signal.h>
+# include <pcap.h>
+# include <pthread.h>
+# include <stdio.h>
 # include <stdlib.h>
+# include <string.h>
+# include <sys/select.h>
+# include <sys/socket.h>
+# include <sys/time.h>
+# include <unistd.h>
+# include <sys/types.h>
 
-# define MAXSCANS   1
+# define MAXSCANS 1
 
-# define SCAN_SYN   0x0001
-# define SCAN_NULL  0x0002
-# define SCAN_FIN   0x0004
-# define SCAN_XMAS  0x0008
-# define SCAN_ACK   0x0010
-# define SCAN_UDP   0x0020
-# define SCAN_ALL   0x003F
+# define SCAN_SYN 0x0001
+# define SCAN_NULL 0x0002
+# define SCAN_FIN 0x0004
+# define SCAN_XMAS 0x0008
+# define SCAN_ACK 0x0010
+# define SCAN_UDP 0x0020
+# define SCAN_ALL 0x003F
 
 # define PCAP_BUFSIZ USHRT_MAX // 65535
 # define MAX_RETRIES 3
@@ -39,21 +36,21 @@
 # define MAX_PKTQUEUE 1024
 # define PROBE_BATCH_MAXSIZE 10
 
+# define FILTER_STRLEN 512
+
 struct nmap_data
 {
-	struct sockaddr_in dst_sockaddr;
-	struct sockaddr_in src_sockaddr;
-	pid_t id;
+  struct sockaddr_in dst_sockaddr;
+  struct sockaddr_in src_sockaddr;
+  pid_t id;
 };
 
 struct scan_mode
 {
   const char *name;
   short flag;
-  int (*encode_and_send)(
-    char *, size_t,
-    struct sockaddr_in *, struct sockaddr_in *,
-    short, int);
+  int (*encode_and_send)(char *, size_t, struct sockaddr_in *,
+                         struct sockaddr_in *, short, int);
 };
 
 enum e_port_state
@@ -78,15 +75,6 @@ struct s_port
 };
 
 typedef struct s_port t_port;
-
-struct s_scan_config
-{
-  struct in_addr target_addr;
-  unsigned int number_of_ports;
-  short scan_type;
-};
-
-typedef struct s_scan_config t_scan_config;
 
 struct s_timing_info
 {
@@ -113,7 +101,7 @@ typedef struct s_probe t_probe;
 
 struct s_packet
 {
-  u_char *data;
+  uint8_t *data;
   size_t size;
   struct timeval ts;
 };
@@ -151,8 +139,8 @@ typedef struct s_scan_worker t_scan_worker;
 struct s_scan_engine
 {
   int raw_socket;
-  unsigned int total_probes;
-  unsigned int outstanding_probes;
+  uint32_t total_probes;
+  uint32_t outstanding_probes;
   unsigned int max_outstanding;
   unsigned int completed_probes;
   t_scan_options *opts;
@@ -192,6 +180,50 @@ struct s_scan_worker
   t_scan_engine *engine;
 };
 
-typedef struct s_scan_worker t_scan_worker;
+struct s_scan_config
+{
+  int use_threads;
+  int max_threads;
+  int verbose;
+  int packet_delay_us;
+  int capture_timeout_ms;
+};
+
+typedef struct s_scan_config t_scan_config;
+
+struct s_port_scan
+{
+  int scan_id;
+
+  int tcp_raw_socket;
+  int udp_raw_socket;
+
+  char *interface;
+  pcap_t *pcap_handle;
+  struct bpf_program bpf_filter;
+  char filter_str[FILTER_STRLEN];
+
+  int source_port_base;
+  int source_port_range;
+  int current_source_port;
+
+  char **target_ips;
+  int num_targets;
+  int *target_ports;
+  int num_ports;
+
+  int packets_sent;
+  int packets_received;
+  int ports_open;
+  int ports_closed;
+  int ports_filtered;
+  int ports_unfiltered;
+  int ports_openfiltered;
+  int scan_complete;
+
+  t_scan_config *config;
+};
+
+typedef struct s_port_scan t_port_scan;
 
 #endif
