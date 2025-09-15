@@ -1,0 +1,12 @@
+services:
+  nmap_develop:
+    build:
+      context: ./develop
+      dockerfile: Dockerfile
+    container_name: nmap_develop
+    volumes:
+      - ../:/workspace   # Carpeta compartida host:contenedor
+    stdin_open: true             # Mantener STDIN abierto
+    tty: true                    # Asignar un pseudo-TTY
+    working_dir: /workspace
+

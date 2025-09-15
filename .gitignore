@@ -5,3 +5,5 @@ compile_commands.json
 *.d
 *.a
 tags
+ft_nmap
+obj
