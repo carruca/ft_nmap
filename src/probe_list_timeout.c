@@ -27,7 +27,7 @@ probe_list_timeout(t_scan_ctx *engine)
 
 			if (elapsed_time > probe->timing.timeout)
 			{
-				if (engine->opts.debugging)
+				if (engine->opts->debugging)
 					printf("port %u timeout after %.2fs\n", probe->port, elapsed_time);
 /*				if (probe->retries < MAX_RETRIES)
 				{

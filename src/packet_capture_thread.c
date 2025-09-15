@@ -25,7 +25,7 @@ packet_capture_thread(void *arg)
 		{
 			while ((pcap_res = pcap_next_ex(engine->pcap_handle, &pkt_header, &pkt_data)) == 1)
 			{
-				if (engine->opts.debugging)
+				if (engine->opts->debugging)
 					printf("probe of %u bytes captured\n", pkt_header->caplen);
 				packet_queue_handler(engine->capture_queue,
 					pkt_data, pkt_header->caplen, pkt_header->ts);

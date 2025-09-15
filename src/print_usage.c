@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 void
-print_usage_and_exit(char *name)
+print_usage(char *program_name)
 {
 	printf("%s [OPTIONS]\n"
     "--help        Print this help screen\n"
@@ -11,6 +11,5 @@ print_usage_and_exit(char *name)
     "--file        File name containing IP addresses to scan\n"
     "--speedup     [max 250] number of parallel threads to use\n"
     "--scan        Scan type: SYN/NULL/FIN/XMAS/ACK/UDP\n",
-    name);
-	exit(EXIT_FAILURE);
+    program_name);
 }

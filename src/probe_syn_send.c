@@ -34,7 +34,7 @@ send_syn_probe(int raw_socket, t_scan_ctx *scan_ctx, t_probe *probe)
 		probe->state = PORT_TESTING;
 		++scan_ctx->outstanding_probes;
 
-		if (scan_ctx->opts.debugging)
+		if (scan_ctx->opts->debugging)
 			printf("probe of %lu bytes sent to port %u (outstanding: %u)\n",
 				bytes_sent, probe->port, scan_ctx->outstanding_probes);
 

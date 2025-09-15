@@ -17,7 +17,6 @@
 # include <netinet/ip_icmp.h>
 # include <netinet/tcp.h>
 # include <netdb.h>
-//# include <error.h>
 # include <stdlib.h>
 # include <limits.h>
 
@@ -55,12 +54,21 @@ typedef enum e_scan_type
     SCAN_ALL = 0x003f, 
 } t_scan_type;
 
+// Result codes for scan functions
+typedef enum e_scan_result
+{
+    SCAN_RESULT_SUCCESS = 0,
+    SCAN_RESULT_FAILURE = 1,
+    SCAN_RESULT_CTX_NULL = 2,
+} t_scan_result;
+
 struct nmap_data
 {
 	struct sockaddr_in dst_sockaddr;
 	struct sockaddr_in src_sockaddr;
 	pid_t id;
 };
+
 
 struct scan_mode
 {
@@ -165,6 +173,7 @@ typedef struct s_scan_options t_scan_options;
 
 typedef struct s_scan_worker t_scan_worker;
 
+// Scan context structure
 struct s_scan_ctx
 {
   int raw_socket;
@@ -211,6 +220,7 @@ struct s_scan_worker
 
 typedef struct s_scan_worker t_scan_worker;
 
+// Function prototypes
 pcap_t *get_pcap_handle();
 void scan_probe_list_create(t_scan_ctx *scan_ctx, unsigned short *ports, unsigned short num_ports);
 void scan_probe_list_destroy(t_scan_ctx *scan_ctx);
@@ -221,7 +231,7 @@ void scan_options_parse(t_scan_options *scan_options, int *arg_index, int argc, 
 t_scan_type get_scan_type_by_name(char *expr);
 char *get_program_name(char *arg);
 void nmap_ip_file_parse(const char *filename);
-void print_usage_and_exit(char *name);
+void print_usage(char *name);
 void scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports);
 int send_worker_create(t_scan_worker *worker, int id, t_scan_ctx *scan_ctx);
 void *send_worker_thread(void *arg);
@@ -261,7 +271,7 @@ int recv_packet(pcap_t *handle, short scan_type, t_list **port_lst);
 void port_destroy(void *port);
 t_port *init_port(unsigned short s_port, unsigned char protocol, short state, struct servent *serv);
 int print_pkt_header(struct pcap_pkthdr *pkt_header);
-unsigned short *get_ports(char *expr, unsigned int *number_of_ports);
+unsigned short *get_ports(char *expr, unsigned short *number_of_ports);
 void print_error(char *program_name, char *error);
 void print_error_and_exit(char *program_name, char *error);
 void print_packet_info(const struct pcap_pkthdr *header, const u_char *bytes);
@@ -271,7 +281,7 @@ void tvsub(struct timeval *out, struct timeval *in);
 void error(int status, int errnum, const char *format, ...);
 const struct scan_mode *get_scan_mode(int index);
 void scan_run(t_scan_ctx *scan_ctx, t_scan_options *scan_options);
-void scan_program_name_set(t_scan_options *scan_options, const char *program_name);
+void scan_options_program_name_set(t_scan_options *scan_options, const char *program_name);
 t_scan_ctx *scan_create();
 
-#endif
+#endif /* FT_NMAP_H */
