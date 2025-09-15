@@ -1,0 +1,246 @@
+--- Startup times for process: Primary (or UI client) ---
+
+times in msec
+ clock   self+sourced   self:  sourced script
+ clock   elapsed:              other lines
+
+000.004  000.004: --- NVIM STARTING ---
+000.295  000.291: event init
+000.502  000.207: early init
+000.602  000.100: locale set
+000.711  000.109: init first window
+001.357  000.646: inits 1
+001.380  000.023: window checked
+001.454  000.075: parsing arguments
+002.230  000.064  000.064: require('vim.shared')
+002.363  000.058  000.058: require('vim.inspect')
+002.425  000.050  000.050: require('vim._options')
+002.430  000.196  000.087: require('vim._editor')
+002.432  000.295  000.035: require('vim._init_packages')
+002.434  000.685: init lua interpreter
+005.396  002.962: nvim_ui_attach
+005.878  000.482: nvim_set_client_info
+005.883  000.005: --- NVIM STARTED ---
+
+--- Startup times for process: Embedded ---
+
+times in msec
+ clock   self+sourced   self:  sourced script
+ clock   elapsed:              other lines
+
+000.004  000.004: --- NVIM STARTING ---
+000.250  000.246: event init
+000.417  000.168: early init
+000.512  000.095: locale set
+000.602  000.090: init first window
+001.359  000.757: inits 1
+001.402  000.043: window checked
+001.512  000.110: parsing arguments
+002.370  000.081  000.081: require('vim.shared')
+002.516  000.059  000.059: require('vim.inspect')
+002.645  000.112  000.112: require('vim._options')
+002.654  000.278  000.107: require('vim._editor')
+002.655  000.402  000.043: require('vim._init_packages')
+002.658  000.744: init lua interpreter
+002.765  000.107: expanding arguments
+002.814  000.049: inits 2
+003.144  000.329: init highlight
+003.145  000.001: waiting for UI
+003.399  000.254: done waiting for UI
+003.410  000.012: clear screen
+003.640  000.036  000.036: require('vim.keymap')
+005.255  000.261  000.261: sourcing nvim_exec2()
+006.522  001.044  001.044: require('vim.termcap')
+006.674  000.059  000.059: require('vim.text')
+051.112  047.698  046.298: require('vim._defaults')
+051.128  000.020: init default mappings & autocommands
+051.351  000.105  000.105: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/ftplugin.vim
+051.482  000.041  000.041: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/indent.vim
+052.835  000.961  000.961: require('lazy')
+052.990  000.016  000.016: require('ffi')
+053.041  000.026  000.026: require('vim.fs')
+053.199  000.154  000.154: require('vim.uri')
+053.220  000.227  000.047: require('vim.loader')
+053.432  000.184  000.184: require('lazy.stats')
+053.606  000.143  000.143: require('lazy.core.util')
+053.839  000.229  000.229: require('lazy.core.config')
+054.354  000.192  000.192: require('lazy.core.handler')
+054.871  000.144  000.144: require('lazy.pkg')
+054.885  000.406  000.262: require('lazy.core.meta')
+054.898  000.533  000.128: require('lazy.core.plugin')
+054.910  001.064  000.338: require('lazy.core.loader')
+055.641  000.242  000.242: require('lazy.core.fragments')
+059.028  000.382  000.382: require('astronvim.config')
+059.056  000.889  000.507: require('astronvim')
+059.466  000.386  000.386: require('vim.hl')
+059.698  000.225  000.225: require('astronvim.notify')
+073.236  000.177  000.177: require('lazy.core.handler.cmd')
+073.418  000.167  000.167: require('lazy.core.handler.event')
+073.717  000.287  000.287: require('lazy.core.handler.ft')
+073.946  000.214  000.214: require('lazy.core.handler.keys')
+077.117  000.025  000.025: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+077.188  000.004  000.004: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+078.449  000.819  000.819: require('ts_context_commentstring.integrations.comment_nvim')
+080.717  000.103  000.103: sourcing nvim_exec2() called at /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/filetype.lua:0
+080.738  000.331  000.227: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/filetype.lua
+080.749  000.450  000.120: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+082.530  000.016  000.016: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+082.601  000.006  000.006: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+083.828  000.124  000.124: require('astroui.config')
+083.841  000.650  000.526: require('astroui')
+085.329  000.014  000.014: sourcing nvim_exec2() called at ColorSchemePre Autocommands for "*":0
+085.350  000.002  000.002: sourcing nvim_exec2() called at ColorSchemePre Autocommands for "*":0
+086.238  000.149  000.149: require('astrotheme.lib.util')
+086.249  000.676  000.526: require('astrotheme')
+086.342  000.091  000.091: require('astrotheme.lib.config')
+087.335  000.187  000.187: require('astrotheme.lib.color')
+087.421  000.429  000.243: require('astrotheme.palettes.astrodark')
+088.118  000.406  000.406: require('astrotheme.groups.base')
+088.625  000.227  000.227: require('astrotheme.groups.syntax')
+088.853  000.139  000.139: require('astrotheme.groups.lsp')
+089.160  000.228  000.228: require('astrotheme.groups.treesitter')
+089.575  000.141  000.141: require('astrotheme.groups.astronvim')
+089.890  000.146  000.146: require('astrotheme.groups.plugins')
+090.121  000.151  000.151: require('astrotheme.groups.plugins.dashboard-nvim')
+090.382  000.119  000.119: require('astrotheme.groups.plugins.nvim-dap-ui')
+090.617  000.148  000.148: require('astrotheme.groups.plugins.nvim-notify')
+090.859  000.103  000.103: require('astrotheme.groups.plugins.nvim-window-picker')
+091.108  000.170  000.170: require('astrotheme.groups.plugins.gitsigns')
+091.324  000.113  000.113: require('astrotheme.groups.plugins.indent-blankline')
+091.797  000.393  000.393: require('astrotheme.groups.plugins.telescope')
+092.590  000.389  000.389: require('astrotheme.groups.plugins.todo-comments')
+093.257  000.392  000.392: require('astrotheme.groups.plugins.which-key')
+094.080  000.462  000.462: require('astrotheme.groups.plugins.neo-tree')
+094.619  000.255  000.255: require('astrotheme.groups.plugins.lazy')
+094.977  000.183  000.183: require('astrotheme.groups.plugins.nvim-cmp')
+095.433  000.221  000.221: require('astrotheme.groups.plugins.nvim-web-devicons')
+095.920  000.246  000.246: require('astrotheme.groups.plugins.vim-illuminate')
+096.378  000.207  000.207: require('astrotheme.groups.plugins.aerial')
+096.793  000.186  000.186: require('astrotheme.groups.plugins.mason')
+099.494  012.807  007.352: sourcing /home/rnavarre/.local/share/nvim/lazy/astrotheme/colors/astrotheme.lua
+099.809  000.207  000.207: require('astroui.lazygit')
+168.292  000.015  000.015: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+168.319  000.002  000.002: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+168.727  000.071  000.071: require('astrocore.config')
+168.743  000.299  000.229: require('astrocore')
+169.168  000.009  000.009: require('vim.F')
+169.222  000.475  000.465: require('vim.diagnostic')
+169.582  000.142  000.142: require('vim.ui')
+435.078  001.887  001.887: require('vim.filetype')
+435.245  354.431  337.141: require('astrocore')
+436.339  000.149  000.149: require('vim.treesitter.language')
+436.411  000.065  000.065: require('vim.func')
+436.535  000.110  000.110: require('vim.func._memoize')
+436.581  000.564  000.239: require('vim.treesitter.query')
+436.596  001.093  000.530: require('nvim-treesitter.query_predicates')
+436.811  000.012  000.012: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+436.827  000.001  000.001: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+437.086  000.005  000.005: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+437.102  000.001  000.001: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+438.051  000.178  000.178: require('nvim-treesitter.utils')
+439.619  000.214  000.214: require('vim.treesitter._range')
+439.731  000.604  000.390: require('vim.treesitter.languagetree')
+439.748  000.905  000.301: require('vim.treesitter')
+441.475  003.420  002.515: require('nvim-treesitter.parsers')
+443.147  000.136  000.136: require('nvim-treesitter.compat')
+443.293  000.073  000.073: require('nvim-treesitter.ts_utils')
+443.313  000.153  000.080: require('nvim-treesitter.tsrange')
+443.364  000.048  000.048: require('nvim-treesitter.caching')
+443.379  001.231  000.893: require('nvim-treesitter.query')
+443.407  001.622  000.391: require('nvim-treesitter.configs')
+443.412  001.918  000.296: require('nvim-treesitter.info')
+443.506  000.091  000.091: require('nvim-treesitter.shell_command_selectors')
+443.547  005.937  000.329: require('nvim-treesitter.install')
+443.599  000.050  000.050: require('nvim-treesitter.statusline')
+443.603  006.070  000.083: require('nvim-treesitter')
+443.607  006.163  000.093: sourcing /home/rnavarre/.local/share/nvim/lazy/nvim-ts-context-commentstring/plugin/ts_context_commentstring.lua
+443.620  006.223  000.060: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+443.752  000.012  000.012: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+443.778  000.002  000.002: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+444.176  000.352  000.352: require('ts_context_commentstring')
+444.262  000.081  000.081: require('ts_context_commentstring.config')
+444.480  000.068  000.068: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/editorconfig.lua
+444.487  000.122  000.054: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+444.642  000.108  000.108: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/man.lua
+444.650  000.157  000.048: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+445.406  000.208  000.208: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/pack/dist/opt/matchit/plugin/matchit.vim
+445.435  000.731  000.523: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/matchit.vim
+445.438  000.780  000.049: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+445.624  000.137  000.137: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/matchparen.vim
+445.629  000.182  000.045: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+445.761  000.066  000.066: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/osc52.lua
+445.766  000.129  000.063: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+445.999  000.163  000.163: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/rplugin.vim
+446.004  000.217  000.054: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+446.148  000.065  000.065: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/shada.vim
+446.153  000.116  000.051: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+446.306  000.023  000.023: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/spellfile.vim
+446.311  000.132  000.109: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+446.397  000.021  000.021: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/plugin/tutor.vim
+446.402  000.075  000.054: sourcing nvim_exec2() called at /home/rnavarre/.config/nvim/init.lua:0
+446.717  393.868  023.998: require('lazy_setup')
+446.794  000.073  000.073: require('polish')
+446.797  395.199  000.297: sourcing /home/rnavarre/.config/nvim/init.lua
+446.805  000.332: sourcing vimrc file(s)
+447.186  000.052  000.052: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/filetype.lua
+447.462  000.066  000.066: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/syntax/synload.vim
+447.551  000.280  000.214: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/syntax/syntax.vim
+447.565  000.428: inits 3
+450.351  002.787: reading ShaDa
+451.760  000.147  000.147: require('astrocore.buffer')
+459.379  001.338  001.338: require('vim.filetype.detect')
+462.746  000.817  000.817: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/ftplugin/c.vim
+463.626  000.019  000.019: sourcing nvim_exec2() called at /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/ftplugin/c.lua:0
+463.641  000.770  000.750: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/ftplugin/c.lua
+464.172  003.482  001.895: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/ftplugin/cpp.vim
+465.359  000.389  000.389: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/indent/cpp.vim
+465.676  000.053  000.053: require('ts_context_commentstring.utils')
+465.682  000.171  000.119: require('ts_context_commentstring.internal')
+469.273  001.849  001.849: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/syntax/c.vim
+469.695  002.846  000.997: sourcing /home/rnavarre/.local/bin/nvim-linux-x86_64/share/nvim/runtime/syntax/cpp.vim
+470.492  000.007  000.007: sourcing nvim_exec2() called at BufReadPost Autocommands for "*":0
+470.538  000.002  000.002: sourcing nvim_exec2() called at BufReadPost Autocommands for "*":0
+471.906  000.409  000.409: require('guess-indent.utils')
+472.342  000.428  000.428: require('guess-indent.config')
+472.348  001.664  000.826: require('guess-indent')
+472.375  002.542  000.869: require('guess-indent')
+473.991  000.742  000.742: require('editorconfig')
+476.392  001.859  001.859: sourcing /home/rnavarre/.local/state/nvim/view//~=+42outer=+ft_nmap=+inc=+ft_nmap.h=
+476.504  012.637: opening buffers
+476.767  000.006  000.006: sourcing nvim_exec2() called at BufEnter Autocommands for "*":0
+476.800  000.002  000.002: sourcing nvim_exec2() called at BufEnter Autocommands for "*":0
+477.265  000.065  000.065: require('astroui.status.condition')
+477.318  000.048  000.048: require('astroui.status.hl')
+477.572  000.080  000.080: require('astroui.status.utils')
+477.580  000.191  000.111: require('astroui.status.provider')
+477.582  000.262  000.072: require('astroui.status.init')
+477.588  000.518  000.142: require('astroui.status.component')
+477.641  000.051  000.051: require('astroui.status.heirline')
+477.644  000.659  000.090: require('astroui.status')
+479.410  000.461  000.461: require('heirline.utils')
+479.565  000.090  000.090: require('astroui.ffi')
+480.053  000.068  000.068: require('heirline.highlights')
+480.060  000.215  000.148: require('heirline.statusline')
+480.066  000.371  000.156: require('heirline')
+481.436  003.343: BufEnter autocommands
+481.440  000.004: editing files in windows
+481.642  000.202: VimEnter autocommands
+481.942  000.300: UIEnter autocommands
+481.946  000.004: before starting main loop
+486.507  000.468  000.468: sourcing /home/rnavarre/.local/share/nvim/lazy/nvim-web-devicons/plugin/nvim-web-devicons.vim
+486.520  000.550  000.082: sourcing nvim_exec2()
+486.536  000.005  000.005: sourcing nvim_exec2()
+486.604  000.002  000.002: sourcing nvim_exec2()
+488.093  000.513  000.513: require('nvim-web-devicons.filetypes')
+489.413  000.778  000.778: require('nvim-web-devicons.default.icons_by_filename')
+493.376  003.957  003.957: require('nvim-web-devicons.default.icons_by_file_extension')
+493.992  000.601  000.601: require('nvim-web-devicons.default.icons_by_operating_system')
+494.299  000.302  000.302: require('nvim-web-devicons.default.icons_by_desktop_environment')
+494.693  000.389  000.389: require('nvim-web-devicons.default.icons_by_window_manager')
+494.700  006.583  000.556: require('nvim-web-devicons.icons-default')
+495.136  008.451  001.356: require('nvim-web-devicons')
+499.495  014.572  005.563: require('nvim-web-devicons')
+519.011  001.091  001.091: require('vim.treesitter.highlighter')
+520.542  022.932: first screen update
+520.549  000.007: --- NVIM STARTED ---
+

@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "logging/log.h"
 
 #include <errno.h>
 
@@ -7,6 +8,7 @@ extern int errno;
 void
 scan_ports(t_scan_ctx *scan_ctx, int num_ports)
 {
+	t_scan_options *opts;
 	struct timeval scan_start, scan_end, timeout;
 	struct pcap_pkthdr *pkt_header;
 	const u_char *pkt_data;
@@ -14,11 +16,19 @@ scan_ports(t_scan_ctx *scan_ctx, int num_ports)
 	int pcap_fd, pcap_res;
 	fd_set fdset;
 
-	if (gettimeofday(&scan_start, NULL) < 0)
-		error(EXIT_FAILURE, errno, "gettimeofday");
+	opts = scan_ctx->opts; 
 
-	if (set_sockaddr_by_hostname(&scan_ctx->target, scan_ctx->opts->target))
+	if (gettimeofday(&scan_start, NULL) < 0)
+	{
+		log_message(LOG_LEVEL_FATAL, "gettypeofday failed: %s", strerror(errno));
 		exit(EXIT_FAILURE);
+	}
+
+	if (set_sockaddr_by_hostname(&scan_ctx->target, opts->target))
+	{
+		log_message(LOG_LEVEL_FATAL, "set_sockaddr_by_hostname failed");
+		exit(EXIT_FAILURE);
+	}
 
 	scan_config_print(scan_ctx, num_ports);
 
@@ -38,7 +48,7 @@ scan_ports(t_scan_ctx *scan_ctx, int num_ports)
 		{
 			while ((pcap_res = pcap_next_ex(scan_ctx->pcap_handle, &pkt_header, &pkt_data)) == 1)
 			{
-				if (scan_ctx->opts->debugging)
+				if (opts->debugging)
 					printf("probe of %u bytes captured\n", pkt_header->caplen);
 				packet_response(scan_ctx, pkt_header->ts, pkt_data);
 			}

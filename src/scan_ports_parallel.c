@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "logging/log.h"
 
 #include <errno.h>
 
@@ -7,15 +8,30 @@ extern int errno;
 void
 scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 {
+	t_scan_options *opts;
 	struct timeval scan_start, scan_end;
 	double total_time;
 
+	if (scan_ctx == NULL)
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_ctx is NULL");
+		exit(EXIT_FAILURE);
+	}
+
+	opts = scan_ctx->opts;
+
 	if (gettimeofday(&scan_start, NULL) < 0)
-		error(EXIT_FAILURE, errno, "gettimeofday");
+	{
+		log_message(LOG_LEVEL_ERROR, "gettimeofday failed: %s", strerror(errno));
+	  exit(EXIT_FAILURE);
+  }
 
 	//init scan
-	if (set_sockaddr_by_hostname(&scan_ctx->target, scan_ctx->opts->target))
+	if (set_sockaddr_by_hostname(&scan_ctx->target, opts->target))
+	{
+		log_message(LOG_LEVEL_ERROR, "set_sockaddr_by_hostname failed: %s", strerror(errno));
 		exit(EXIT_FAILURE);
+	}
 
 	scan_config_print(scan_ctx, num_ports);
 
@@ -29,7 +45,7 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 		error(EXIT_FAILURE, errno, "capture_queue_create");
 
 	// TODO: unificar las dos cadenas de workers
-	scan_ctx->worker_threads = calloc(scan_ctx->opts->num_threads, sizeof(pthread_t));
+	scan_ctx->worker_threads = calloc(opts->num_threads, sizeof(pthread_t));
 	if (scan_ctx->worker_threads == NULL)
 		error(EXIT_FAILURE, errno, "worker_threads_create");
 
@@ -38,17 +54,17 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 	if (pthread_create(&scan_ctx->capture_thread, NULL, packet_capture_thread, scan_ctx) != 0)
 		error(EXIT_FAILURE, errno, "pthread_create");
 
-	for (unsigned short pos = 0; pos < scan_ctx->opts->num_threads; ++pos)
+	for (unsigned short pos = 0; pos < opts->num_threads; ++pos)
 	{
 		if (pthread_create(&scan_ctx->worker_threads[pos], NULL, packet_worker_thread, scan_ctx) != 0)
 			error(EXIT_FAILURE, errno, "pthread_create");
 	}
 
-	scan_ctx->send_workers = calloc(scan_ctx->opts->num_threads, sizeof(t_scan_worker));
+	scan_ctx->send_workers = calloc(opts->num_threads, sizeof(t_scan_worker));
 	if (scan_ctx->send_workers == NULL)
 		error(EXIT_FAILURE, errno, "send_workers_create");
 
-	for (unsigned short pos = 0; pos < scan_ctx->opts->num_threads; ++pos)
+	for (unsigned short pos = 0; pos < opts->num_threads; ++pos)
 	{
 		if (send_worker_create(&scan_ctx->send_workers[pos], pos, scan_ctx) != 0)
 			error(EXIT_FAILURE, errno, "send_worker_create");
@@ -63,10 +79,10 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 		usleep(1000);
 	}
 
-	for (unsigned short pos = 0; pos < scan_ctx->opts->num_threads; ++pos)
+	for (unsigned short pos = 0; pos < opts->num_threads; ++pos)
 		scan_ctx->send_workers[pos].active = 0;
 
-	for (unsigned short pos = 0; pos < scan_ctx->opts->num_threads; ++pos)
+	for (unsigned short pos = 0; pos < opts->num_threads; ++pos)
 	{
 		pthread_join(scan_ctx->send_workers[pos].thread, NULL);
 		close(scan_ctx->send_workers[pos].tcp_socket);
@@ -81,7 +97,7 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
 	pthread_cond_broadcast(&scan_ctx->capture_queue->not_full);
 
 	pthread_join(scan_ctx->capture_thread, NULL);
-	for (unsigned short pos = 0; pos < scan_ctx->opts->num_threads; ++pos)
+	for (unsigned short pos = 0; pos < opts->num_threads; ++pos)
 		pthread_join(scan_ctx->worker_threads[pos], NULL);
 
 	scan_destroy(scan_ctx);

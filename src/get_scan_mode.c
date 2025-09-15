@@ -2,14 +2,14 @@
 
 const struct scan_mode *get_scan_mode(int index)
 {
-  static struct scan_mode scan_modes[] = 
+  static struct scan_mode scan_modes[] =
   {
-    {"NULL", SCAN_NULL, NULL},
+    {"SYN", SCAN_SYN, NULL}, // syn_encode_and_send}
+    {"ACK", SCAN_ACK, NULL},
     {"FIN", SCAN_FIN, NULL},
     {"XMAS", SCAN_XMAS, NULL},
-    {"ACK", SCAN_ACK, NULL},
+    {"NULL", SCAN_NULL, NULL},
     {"UDP", SCAN_UDP, NULL},
-    {"SYN", SCAN_SYN, NULL}, // syn_encode_and_send}
   }; 
 
   return (scan_modes + index);

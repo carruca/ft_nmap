@@ -2,15 +2,15 @@
 
 #include <limits.h>
 
-unsigned short *
-get_ports(char *expr, unsigned short *number_of_ports)
+uint16_t *
+get_ports(char *expr, uint16_t *number_of_ports)
 {
-	unsigned short *ports;
+	uint16_t *ports;
 	int count, start, end;
 	char *next, *dash;
 	char checks[USHRT_MAX + 1];
 
-	ports = malloc(MAXPORTS * sizeof(unsigned short));
+	ports = malloc(MAXPORTS * sizeof(uint16_t));
 	if (ports == NULL)
 		return NULL;
 

@@ -8,10 +8,9 @@ SRCSFILES	= \
 						checksum.c \
 						error.c \
 						ft_nmap.c \
-						get_pcap_handler.c \
+						get_pcap_handle.c \
 						get_ports.c \
 						get_probe_batch.c \
-						get_program_name.c \
 						get_raw_socket_by_protocol.c \
 						get_scan_mode.c \
 						get_scan_type_by_name.c \
@@ -27,8 +26,7 @@ SRCSFILES	= \
 						packet_queue_handler.c \
 						packet_response.c \
 						packet_worker_thread.c \
-						scan_options_parse.c \
-						print_usage_and_exit.c \
+						print_usage.c \
 						probe_list_create.c \
 						scan_probe_list_destroy.c \
 						probe_list_timeout.c \
@@ -36,9 +34,12 @@ SRCSFILES	= \
 						probe_syn_send.c \
 						probe_update.c \
 						scan_config_print.c \
+						scan_create.c \
 						scan_destroy.c \
 						scan_init.c \
 						scan_results_print.c \
+						scan_options_parse.c \
+						scan_options_program_name_set.c \
 						scan_options_destroy.c \
 						scan_ports.c \
 						scan_ports_parallel.c \
@@ -52,6 +53,13 @@ SRCSFILES	= \
 						set_socketaddr_by_hostname.c \
 						tcp_checksum.c \
 						tvsub.c \
+						logging/config.c \
+						logging/core.c \
+						logging/level_string.c \
+						logging/level.c \
+						logging/message.c \
+						logging/name.c \
+						logging/stream.c \
 
 
 SRCS			= $(addprefix $(SRCSPATH), $(SRCSFILES))
@@ -61,6 +69,7 @@ DEPS			= $(OBJS:.o=.d)
 LIBFTPATH	= libft/
 LIBFT			= $(LIBFTPATH)/libft.a
 
+RM 				= rm -rf
 CC      	= gcc
 CFLAGS  	= -Wall -Werror -Wextra -MMD -Wunused -D_DEFAULT_SOURCE
 INC 			= -I$(INCSPATH) -I$(LIBFTPATH)
@@ -92,13 +101,12 @@ sanitize: LDFLAGS += $(FSANITIZE)
 sanitize: CFLAGS += $(FSANITIZE)
 sanitize: $(NAME)
 
-tag:
-	$(RM) tags
-	ctags $(SRCS)
+tags:
+	ctags -R --fields=+iaS --extra=+q $(SRCS)
 
 clean:
 	$(MAKE) -s -C $(LIBFTPATH) clean
-	$(RM) $(OBJS)
+	$(RM) $(OBJSPATH)
 
 fclean: clean
 	$(MAKE) -s -C $(LIBFTPATH) fclean
@@ -113,6 +121,9 @@ docker:
 
 sh:
 	docker compose -f docker/docker-compose.yml exec nmap_develop sh
+
+run:
+	./$(NAME) --help
 
 .SILENT: $(SILENT)
 .PHONY: docker sh
