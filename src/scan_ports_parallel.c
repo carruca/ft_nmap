@@ -27,7 +27,7 @@ scan_ports_parallel(t_scan_ctx *scan_ctx, int num_ports)
   }
 
 	//init scan
-	if (set_sockaddr_by_hostname(&scan_ctx->target, opts->target))
+	if (scan_target_sockaddr_set(&scan_ctx->target, opts->target))
 	{
 		log_message(LOG_LEVEL_ERROR, "set_sockaddr_by_hostname failed: %s", strerror(errno));
 		exit(EXIT_FAILURE);

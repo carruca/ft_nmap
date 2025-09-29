@@ -16,7 +16,7 @@ scan_ports(t_scan_ctx *scan_ctx, int num_ports)
 	int pcap_fd, pcap_res;
 	fd_set fdset;
 
-	opts = scan_ctx->opts; 
+	opts = scan_ctx->opts;
 
 	if (gettimeofday(&scan_start, NULL) < 0)
 	{
@@ -24,7 +24,7 @@ scan_ports(t_scan_ctx *scan_ctx, int num_ports)
 		exit(EXIT_FAILURE);
 	}
 
-	if (set_sockaddr_by_hostname(&scan_ctx->target, opts->target))
+	if (scan_target_sockaddr_set(&scan_ctx->target, opts->target))
 	{
 		log_message(LOG_LEVEL_FATAL, "set_sockaddr_by_hostname failed");
 		exit(EXIT_FAILURE);

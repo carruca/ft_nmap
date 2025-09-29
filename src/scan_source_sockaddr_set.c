@@ -2,7 +2,7 @@
 #include <ifaddrs.h>
 
 int
-scan_local_sockaddr_set(struct sockaddr_in *sockaddr)
+scan_source_sockaddr_set(struct sockaddr_in *sockaddr)
 {
 	struct ifaddrs *ifaddr, *ifa;
 

@@ -48,9 +48,9 @@ SRCSFILES	= \
 						send_probe_list.c \
 						send_worker_create.c \
 						send_worker_thread.c \
-						scan_local_sockaddr_set.c \
+						scan_source_sockaddr_set.c \
+						scan_target_sockaddr_set.c \
 						set_pcap_filter.c \
-						set_socketaddr_by_hostname.c \
 						tcp_checksum.c \
 						tvsub.c \
 						logging/config.c \
@@ -102,7 +102,7 @@ sanitize: CFLAGS += $(FSANITIZE)
 sanitize: $(NAME)
 
 tags:
-	ctags -R --fields=+iaS --extra=+q $(SRCS)
+	ctags $(SRCS)
 
 clean:
 	$(MAKE) -s -C $(LIBFTPATH) clean
@@ -126,4 +126,4 @@ run:
 	./$(NAME) --help
 
 .SILENT: $(SILENT)
-.PHONY: docker sh
+.PHONY: docker sh tags run all clean fclean re sanitize own print

@@ -1,7 +1,7 @@
 #include "ft_nmap.h"
 
 int
-set_sockaddr_by_hostname(struct sockaddr_in *sockaddr, const char *hostname)
+scan_target_sockaddr_set(struct sockaddr_in *sockaddr, const char *hostname)
 {
 	struct addrinfo hints, *res;
 	int s;

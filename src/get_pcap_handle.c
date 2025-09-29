@@ -1,11 +1,11 @@
 #include "ft_nmap.h"
 
 pcap_t *
-get_pcap_handle()
+get_pcap_handle(t_scan_options *opts)
 {
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
-	size_t number_of_devs;
+	size_t num_devices;
 	size_t iface;
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t *pcap_handle;
@@ -34,8 +34,9 @@ get_pcap_handle()
 	}
 */
 	iface = ETH0;
-	for (dev = alldevs, number_of_devs = 0; number_of_devs < iface - 1; dev = dev->next, ++number_of_devs);
-	printf("%s interface opening...\n", dev->name);
+	for (dev = alldevs, num_devices = 0; num_devices < iface - 1; dev = dev->next, ++num_devices);
+	if (opts->verbose)
+		printf("%s interface opening...\n", dev->name);
 
 	pcap_handle = pcap_create(dev->name, errbuf);
 	if (pcap_handle == NULL)

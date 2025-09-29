@@ -44,6 +44,8 @@
 
 # define FILTER_STRLEN 512
 
+# define MAX_PORTS_PER_SCAN 1024
+
 typedef enum e_scan_type
 {
     SCAN_UNDEFINED = 0x0000,
@@ -159,6 +161,8 @@ struct s_packet_queue
 
 typedef struct s_packet_queue t_packet_queue;
 
+typedef struct s_scan_info t_scan_info;
+
 struct s_scan_options
 {
   unsigned short num_threads;
@@ -169,6 +173,7 @@ struct s_scan_options
   char *filename;
   char *portlist;
   char *program_name;
+  t_scan_info *scan_info;
 };
 
 typedef struct s_scan_options t_scan_options;
@@ -220,14 +225,12 @@ struct s_scan_worker
   t_scan_ctx *engine;
 };
 
-typedef struct s_scan_worker t_scan_worker;
-
-struct s_port_scan
+struct s_scan_info
 {
-  int scan_id;
+  int thread_id;
 
-  int tcp_raw_socket;
-  int udp_raw_socket;
+  int raw_tcp_socket;
+  int raw_udp_socket;
 
   char *interface;
   pcap_t *pcap_handle;
@@ -238,27 +241,18 @@ struct s_port_scan
   int source_port_range;
   int current_source_port;
 
+  t_list *probe_list;
+
   char **target_ips;
   int num_targets;
   int *target_ports;
   int num_ports;
 
-  int packets_sent;
-  int packets_received;
-  int ports_open;
-  int ports_closed;
-  int ports_filtered;
-  int ports_unfiltered;
-  int ports_openfiltered;
-  int scan_complete;
-
-  t_scan_config *config;
+  t_scan_options *config;
 };
 
-typedef struct s_port_scan t_port_scan;
-
 // Function prototypes
-pcap_t *get_pcap_handle();
+pcap_t *get_pcap_handle(t_scan_options *opts);
 void scan_probe_list_create(t_scan_ctx *scan_ctx, unsigned short *ports, unsigned short num_ports);
 void scan_probe_list_destroy(t_scan_ctx *scan_ctx);
 void scan_options_destroy(t_scan_options *opts);
@@ -295,9 +289,9 @@ int get_raw_socket_by_protocol(const char *protocol_name);
 int send_syn_probe(int raw_socket, t_scan_ctx *scan_ctx, t_probe *probe);
 int nmap_xmit(struct nmap_data *nmap, short scan_type, unsigned short port);
 int nmap_set_source_sockaddr(struct nmap_data *nmap);
-int scan_local_sockaddr_set(struct sockaddr_in *sockaddr);
+int scan_source_sockaddr_set(struct sockaddr_in *sockaddr);
 int nmap_set_dst_sockaddr(struct nmap_data *nmap, const char *hostname);
-int set_sockaddr_by_hostname(struct sockaddr_in *sockaddr, const char *hostname);
+int scan_target_sockaddr_set(struct sockaddr_in *sockaddr, const char *hostname);
 void scan_config_print(const t_scan_ctx *scan_ctx, int num_ports);
 int syn_encode_and_send(char *buffer, size_t bufsize, struct sockaddr_in *src_sockaddr, struct sockaddr_in *dst_sockaddr, short port, int sockfd);
 unsigned short tcp_checksum(const struct sockaddr_in *src_sockaddr, const struct sockaddr_in *dst_sockaddr, const struct tcphdr *th);
