@@ -1,25 +1,6 @@
 #include "ft_nmap.h"
 #include "logging/log.h"
 
-void
-*thread_start(void *data)
-{
-	(void)data;
-/*
-	char filter_str[256];
-
-	scan_ctx.pcap_handle = get_pcap_handle();
-	if (scan_ctx.pcap_handle == NULL)
-		nmap_print_error_and_exit("pcap_handle failed.");
-
-	snprintf(filter_str, sizeof(filter_str), "src %s and portrange %s",
-		scan_ctx.opts.target, (scan_ctx.opts.portlist) ? scan_ctx.opts.portlist : DEFAULT_PORT_RANGE);
-	if (set_pcap_filter(scan_ctx.pcap_handle, filter_str))
-		nmap_print_error_and_exit("pcap_filter failed.");
-*/
-	return NULL;
-}
-
 int
 scan_info_init(t_scan_info *info, int thread_id, t_scan_options *config)
 {
@@ -58,6 +39,27 @@ scan_info_init(t_scan_info *info, int thread_id, t_scan_options *config)
 	return 0;
 }
 
+t_scan_probe **
+get_pending_probes(t_list **pending_node, int num_probes)
+{
+	t_scan_probe **probes;
+	t_scan_probe *probe;
+	int count;
+
+	probes = calloc(num_probes, sizeof(t_scan_probe *));
+	if (probes == NULL)
+		return NULL;
+
+	count = 0;
+	while (*pending_node && count < num_probes)
+	{
+		probe = (t_scan_probe *)(*pending_node)->content;
+		if (probe->state == PROBE_PENDING)
+			probes[count++] = probe;
+		*pending_node = (*pending_node)->next;
+	}
+	return probes;
+}
 
 int
 scan_info_execute(t_scan_info *info, t_scan_options *opts)
@@ -77,12 +79,75 @@ scan_info_execute(t_scan_info *info, t_scan_options *opts)
 }
 
 void
+*thread_wrapper(void *data)
+{
+	t_scan_info *info;
+
+	info = (t_scan_info *)data;
+	scan_info_execute(info, info->config);
+	return NULL;
+}
+
+int
+scan_info_parallel_execute(
+	t_scan_info *infos, t_list **pending_list,
+	t_scan_ctx *ctx, t_scan_options *config)
+{
+	uint16_t probes_per_thread;
+	uint16_t remaining_probes;
+	uint16_t probes_assigned_to_thread;
+	t_scan_info *next_info;
+
+	probes_per_thread = ctx->total_probes / config->num_threads;
+	remaining_probes = ctx->total_probes % config->num_threads;
+
+	for (uint16_t current_thread = 0; current_thread < config->num_threads; ++current_thread)
+	{
+		probes_assigned_to_thread = probes_per_thread +
+			(current_thread < remaining_probes ? 1 : 0);
+
+		next_info = &infos[current_thread];
+
+		if (scan_info_init(next_info, current_thread + 1, config))
+		{
+			log_message(LOG_LEVEL_ERROR, "scan_info_thread_distribute: scan_info_init failed");
+			return -1;
+		}
+
+		next_info->probes = get_pending_probes(pending_list, probes_assigned_to_thread);
+		if (next_info->probes == NULL)
+		{
+			log_message(LOG_LEVEL_ERROR, "scan_info_thread_distribute: get_pending_probes failed");
+			return -1;
+		}
+
+		log_message(LOG_LEVEL_DEBUG, "Thread %d assigned %d probes",
+			current_thread, probes_assigned_to_thread);
+
+
+		if (pthread_create(&next_info->thread, NULL, thread_wrapper, next_info) != 0)
+		{
+			log_message(LOG_LEVEL_ERROR, "scan_info_thread_distribute: pthread_create failed");
+			return -1;
+		}
+	}
+
+	for (uint16_t current_thread = 0; current_thread < config->num_threads; ++current_thread)
+	{
+		next_info = &infos[current_thread];
+
+		pthread_join(next_info->thread, NULL);
+		// TODO: free resources
+	}
+	return 0;
+}
+
+void
 scan_run(t_scan_ctx *scan_ctx, t_scan_options *opts)
 {
 	unsigned short *ports;
 	unsigned short num_ports;
 //	char filter_str[256];
-	t_scan_info *info;
 
 	if (scan_ctx == NULL)
 	{
@@ -123,10 +188,12 @@ scan_run(t_scan_ctx *scan_ctx, t_scan_options *opts)
 		exit(EXIT_FAILURE);
 	}
 
+	scan_config_print(scan_ctx, num_ports);
 	if (!opts->num_threads)
 	{
 		log_message(LOG_LEVEL_INFO, "Starting single-threaded scan");
-		scan_config_print(scan_ctx, num_ports);
+
+		t_scan_info *info;
 
 		info = calloc(1, sizeof(t_scan_info));
 		if (info == NULL)
@@ -142,8 +209,14 @@ scan_run(t_scan_ctx *scan_ctx, t_scan_options *opts)
 			exit(EXIT_FAILURE);
 		}
 
-		// TODO: asignar todos los target ips
-		info->probe_list = scan_ctx->probe_list;
+		// TODO: asignar probes
+		scan_ctx->pending_probe_list = scan_ctx->probe_list;
+		info->probes = get_pending_probes(&scan_ctx->pending_probe_list, scan_ctx->total_probes);
+		if (info->probes == NULL)
+		{
+			log_message(LOG_LEVEL_ERROR, "scan_run: get_pending_probes failed");
+			exit(EXIT_FAILURE);
+		}
 
 		scan_info_execute(info, opts);
 		scan_ports(scan_ctx, num_ports);
@@ -151,9 +224,19 @@ scan_run(t_scan_ctx *scan_ctx, t_scan_options *opts)
 	else
 	{
 		log_message(LOG_LEVEL_INFO, "Starting multi-threaded scan with %d threads", opts->num_threads);
+
+		pthread_t threads[opts->num_threads];
+		t_scan_info infos[opts->num_threads];
+
+		(void)threads;
+
+		//asign probes per thread
+		scan_ctx->pending_probe_list = scan_ctx->probe_list;
+		scan_info_parallel_execute(infos, &scan_ctx->pending_probe_list, scan_ctx, opts);
+
 		scan_ports_parallel(scan_ctx, num_ports);
 	}
 
-	pcap_close(scan_ctx->pcap_handle);
+//	pcap_close(scan_ctx->pcap_handle);
 	free(ports);
 }

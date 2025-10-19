@@ -15,8 +15,7 @@ get_probe_batch(t_scan_worker *worker, t_scan_ctx *engine)
 		probe = (t_probe *)current_node->content;
 		if (probe->state == PORT_UNKNOWN)
 		{
-			worker->probe_batch[count] = probe;
-			++count;
+			worker->probe_batch[count++] = probe;
 			engine->pending_probe_list = current_node->next;
 		}
 		current_node = current_node->next;

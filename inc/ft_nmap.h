@@ -4,6 +4,7 @@
 # include "libft.h"
 # include <pcap.h>
 # include <pthread.h>
+#include <stdint.h>
 # include <sys/types.h>
 # include <sys/time.h>
 # include <sys/select.h>
@@ -37,6 +38,8 @@
 
 # define IP_HLEN sizeof(struct ip) >> 2
 # define TCP_HLEN sizeof(struct tcphdr) >> 2
+
+# define IP_STRLEN 16
 
 # define PROMISC_TRUE	1
 # define PROMISC_FALSE 0
@@ -139,6 +142,33 @@ struct s_probe
 
 typedef struct s_probe t_probe;
 
+enum e_probe_state
+{
+  PROBE_PENDING = 0,
+  PROBE_SENT,
+  PROBE_REPLIED,
+  PROBE_TIMEDOUT
+};
+
+typedef enum e_probe_state t_probe_state;
+
+struct s_scan_probe
+{
+  char target_ip[IP_STRLEN];
+  uint16_t target_port;
+  uint16_t source_port;
+  t_probe_state state;
+
+  struct timeval sent_time;
+  struct timeval recv_time;
+  double timeout;
+  int retries;
+
+  char *service_name;
+};
+
+typedef struct s_scan_probe t_scan_probe;
+
 struct s_packet
 {
   u_char *data;
@@ -227,6 +257,7 @@ struct s_scan_worker
 
 struct s_scan_info
 {
+  pthread_t thread;
   int thread_id;
 
   int raw_tcp_socket;
@@ -241,7 +272,7 @@ struct s_scan_info
   int source_port_range;
   int current_source_port;
 
-  t_list *probe_list;
+  t_scan_probe **probes;
 
   char **target_ips;
   int num_targets;
