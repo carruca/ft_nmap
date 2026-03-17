@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "logging/log.h"
 #include <ifaddrs.h>
 
 int
@@ -8,6 +9,7 @@ scan_source_sockaddr_set(struct sockaddr_in *sockaddr)
 
 	if (getifaddrs(&ifaddr) == -1)
 	{
+		log_message(LOG_LEVEL_ERROR, "source addr: getifaddrs failed");
 		perror("getifaddrs");
 		return 1;
 	}

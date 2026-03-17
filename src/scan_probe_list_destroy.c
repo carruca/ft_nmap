@@ -2,8 +2,8 @@
 
 #include <stdlib.h>
 
-void scan_probe_list_destroy(t_scan_ctx *scan_ctx)
+void scan_probe_list_destroy(t_engine *scan_eng)
 {
-    if (scan_ctx)
-	    ft_lstclear(&scan_ctx->probe_list, free);
+    if (scan_eng)
+	    ft_lstclear(&scan_eng->probes, free);
 }

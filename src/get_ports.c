@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "logging/log.h"
 
 #include <limits.h>
 
@@ -9,12 +10,21 @@ get_ports(char *expr, uint16_t *number_of_ports)
 	int count, start, end;
 	char *next, *dash;
 	char checks[USHRT_MAX + 1];
+	char *buf;
+
+	buf = strdup(expr);
+	if (buf == NULL)
+		return NULL;
+	expr = buf;
 
 	ports = malloc(MAXPORTS * sizeof(uint16_t));
 	if (ports == NULL)
+	{
+		free(buf);
 		return NULL;
+	}
 
-	memset(checks, 0, MAXPORTS + 1);
+	memset(checks, 0, sizeof(checks));
 	count = 0;
 	next = expr;
 	while (next != NULL)
@@ -39,7 +49,12 @@ get_ports(char *expr, uint16_t *number_of_ports)
 		}
 
 		if (start < MINPORTS || start > end || end > USHRT_MAX)
-			print_error_and_exit("", "port range is invalid.");
+		{
+			log_message(LOG_LEVEL_FATAL, "port range is invalid.");
+			free(buf);
+			free(ports);
+			exit(EXIT_FAILURE);
+		}
 
 		for (int i = start; i <= end; ++i)
 		{
@@ -52,5 +67,6 @@ get_ports(char *expr, uint16_t *number_of_ports)
 		expr = next + 1;
 	}
 	*number_of_ports = count;
+	free(buf);
 	return ports;
 }

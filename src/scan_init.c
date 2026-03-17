@@ -1,10 +1,9 @@
 #include "ft_nmap.h"
 
 void
-scan_init(t_scan_ctx *scan_ctx)
+scan_init(t_engine *scan_eng)
 {
-	*scan_ctx = (t_scan_ctx){0};
+	*scan_eng = (t_engine){0};
 
-	scan_ctx->max_outstanding = 1024;
-	scan_ctx->global_timing.timeout = 2.0;
+	scan_eng->timing.timeout = 2.0;
 }

@@ -5,7 +5,7 @@
 #include <string.h>
 
 void
-scan_options_program_name_set(t_scan_options *scan_options, const char *path)
+scan_options_program_name_set(t_opts *scan_options, const char *path)
 {
     const char *program_name;
     char copy_path[256];

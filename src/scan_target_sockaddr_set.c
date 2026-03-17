@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "logging/log.h"
 
 int
 scan_target_sockaddr_set(struct sockaddr_in *sockaddr, const char *hostname)
@@ -16,6 +17,8 @@ scan_target_sockaddr_set(struct sockaddr_in *sockaddr, const char *hostname)
 		return 1;
 	}
 	memcpy(sockaddr, res->ai_addr, res->ai_addrlen);
+	log_message(LOG_LEVEL_DEBUG, "Resolved %s to %s",
+		hostname, inet_ntoa(sockaddr->sin_addr));
 	freeaddrinfo(res);
 	return 0;
 }

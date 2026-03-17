@@ -1,13 +1,17 @@
 #include "ft_nmap.h"
+#include "logging/log.h"
 
 #include <stdlib.h>
 
-t_scan_ctx *scan_create(void)
+t_engine *scan_create(void)
 {
-    t_scan_ctx *scan_ctx;
+    t_engine *scan_eng;
 
-    scan_ctx = calloc(1, sizeof(t_scan_ctx));
-    if (!scan_ctx)
-        print_error_and_exit("", "Bad alloc");
-    return scan_ctx;
+    scan_eng = calloc(1, sizeof(t_engine));
+    if (!scan_eng)
+    {
+        log_message(LOG_LEVEL_FATAL, "Bad alloc");
+        exit(EXIT_FAILURE);
+    }
+    return scan_eng;
 }
