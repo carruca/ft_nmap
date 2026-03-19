@@ -1,8 +1,6 @@
 #include "ft_nmap.h"
 #include "logging/log.h"
 
-#include <limits.h>
-
 uint16_t *
 get_ports(char *expr, uint16_t *number_of_ports)
 {
@@ -48,9 +46,10 @@ get_ports(char *expr, uint16_t *number_of_ports)
 				end = start + MAXPORTS - 1;
 		}
 
-		if (start < MINPORTS || start > end || end > USHRT_MAX)
+		if (start < 0 || start > end || end > USHRT_MAX)
 		{
-			log_message(LOG_LEVEL_FATAL, "port range is invalid.");
+			fprintf(stderr, "ft_nmap: port numbers must be between 0 and %d.\n",
+				USHRT_MAX);
 			free(buf);
 			free(ports);
 			exit(EXIT_FAILURE);
@@ -60,6 +59,14 @@ get_ports(char *expr, uint16_t *number_of_ports)
 		{
 			if (checks[i] == 0)
 			{
+				if (count >= MAXPORTS)
+				{
+					fprintf(stderr, "ft_nmap: port count exceeds maximum of %d.\n",
+						MAXPORTS);
+					free(buf);
+					free(ports);
+					exit(EXIT_FAILURE);
+				}
 				ports[count++] = i;
 				checks[i] = 1;
 			}

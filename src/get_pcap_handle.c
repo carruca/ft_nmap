@@ -4,8 +4,8 @@
 static pcap_if_t *
 pcap_find_iface_for_target(const char *target, pcap_if_t *alldevs)
 {
-	struct sockaddr_in	target_addr;
-	pcap_if_t			*dev;
+	struct sockaddr_in target_addr;
+	pcap_if_t *dev;
 
 	inet_pton(AF_INET, target, &target_addr.sin_addr);
 
@@ -26,10 +26,10 @@ pcap_find_iface_for_target(const char *target, pcap_if_t *alldevs)
 pcap_t *
 get_pcap_handle(t_opts *opts, int *datalink)
 {
-	pcap_if_t	*alldevs;
-	pcap_if_t	*dev;
-	char		errbuf[PCAP_ERRBUF_SIZE];
-	pcap_t		*pcap_handle;
+	pcap_if_t *alldevs;
+	pcap_if_t *dev;
+	char errbuf[PCAP_ERRBUF_SIZE];
+	pcap_t *pcap_handle;
 
 	if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR)
 	{

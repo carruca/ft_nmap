@@ -74,11 +74,21 @@ scan_cli_option_help(t_opts *scan_options, const char *arg)
 void
 scan_cli_option_ports(t_opts *scan_options, const char *arg)
 {
+	const char *c;
+
 	(void)arg;
 	if (scan_options->portlist)
 	{
 		log_message(LOG_LEVEL_FATAL, "only one --ports option allowed, separate multiples ranges with commas.");
 		exit(EXIT_FAILURE);
+	}
+	for (c = optarg; *c; c++)
+	{
+		if (!isdigit((unsigned char)*c) && *c != ',' && *c != '-')
+		{
+			fprintf(stderr, "ft_nmap: invalid port expression: '%s'.\n", optarg);
+			exit(EXIT_FAILURE);
+		}
 	}
 	scan_options->portlist = strdup(optarg);
 }
@@ -87,7 +97,7 @@ void
 scan_cli_option_ip(t_opts *scan_options, const char *arg)
 {
 	(void)arg;
-	if (scan_options->target)
+	if (scan_options->num_targets > 0)
 	{
 		log_message(LOG_LEVEL_FATAL, "you can only use --ip option once.");
 		exit(EXIT_FAILURE);
@@ -97,7 +107,14 @@ scan_cli_option_ip(t_opts *scan_options, const char *arg)
 		log_message(LOG_LEVEL_FATAL, "invalid target: must be a valid IPv4 or hostname.");
 		exit(EXIT_FAILURE);
 	}
-	scan_options->target = strdup(optarg);
+	scan_options->targets = malloc(sizeof(char *));
+	if (scan_options->targets == NULL)
+	{
+		log_message(LOG_LEVEL_FATAL, "malloc failed");
+		exit(EXIT_FAILURE);
+	}
+	scan_options->targets[0] = strdup(optarg);
+	scan_options->num_targets = 1;
 }
 
 void
@@ -115,13 +132,16 @@ scan_cli_option_file(t_opts *scan_options, const char *arg)
 void
 scan_cli_option_speedup(t_opts *scan_options, const char *arg)
 {
+	int n;
+
 	(void)arg;
-	if (scan_options->num_threads > MAXTHREADS)
+	n = atoi(optarg);
+	if (n < 0 || n > MAXTHREADS)
 	{
-		log_message(LOG_LEVEL_FATAL, "speedup exceeded.");
+		log_message(LOG_LEVEL_FATAL, "speedup must be between 0 and %d.", MAXTHREADS);
 		exit(EXIT_FAILURE);
 	}
-	scan_options->num_threads = atoi(optarg);
+	scan_options->num_threads = (unsigned short)n;
 }
 
 void
@@ -147,7 +167,7 @@ void
 scan_cli_option_debug(t_opts *scan_options, const char *arg)
 {
 	(void)arg;
-	scan_options->debugging = 1;
+	scan_options->verbose = 2;
 }
 
 void
@@ -201,7 +221,7 @@ scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **ar
 	if (scan_options->scan_flag == SCAN_UNDEFINED)
 		scan_options->scan_flag = SCAN_ALL;
 
-	if (scan_options->target && scan_options->filename)
+	if (scan_options->num_targets > 0 && scan_options->filename)
 	{
 		log_message(LOG_LEVEL_FATAL, "--ip and --file options cannot be used at the same time.");
 		exit(EXIT_FAILURE);
@@ -209,6 +229,12 @@ scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **ar
 
 	if (scan_options->filename)
 		ip_file_parse(scan_options, scan_options->filename);
+
+	if (scan_options->num_targets == 0)
+	{
+		log_message(LOG_LEVEL_FATAL, "no target specified. Use --ip or --file.");
+		exit(EXIT_FAILURE);
+	}
 
 	*out_arg_index = optind;
 }

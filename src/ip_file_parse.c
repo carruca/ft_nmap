@@ -4,12 +4,12 @@
 void
 ip_file_parse(t_opts *opts, const char *filename)
 {
-	FILE	*stream;
-	char	line[HOST_NAME_MAX];
-	char	**targets;
-	char	*newline;
-	int		count;
-	int		capacity;
+	FILE *stream;
+	char line[HOST_NAME_MAX];
+	char **targets;
+	char *newline;
+	int count;
+	int capacity;
 
 	stream = fopen(filename, "r");
 	if (stream == NULL)
@@ -67,6 +67,6 @@ ip_file_parse(t_opts *opts, const char *filename)
 	}
 
 	log_message(LOG_LEVEL_INFO, "loaded %d target(s) from %s", count, filename);
-	opts->file_targets = targets;
-	opts->num_file_targets = count;
+	opts->targets = targets;
+	opts->num_targets = count;
 }

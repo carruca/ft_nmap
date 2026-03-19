@@ -12,15 +12,19 @@ SRCSFILES	= \
 						get_pcap_handle.c \
 						get_ports.c \
 						get_raw_socket_by_protocol.c \
-						get_scan_mode.c \
 						get_scan_type_by_name.c \
 						ip_file_parse.c \
-						packet_response.c \
+						probe_match.c \
 						print_usage.c \
-						scan_probe_list_create.c \
-						scan_probe_list_destroy.c \
-						probe_send_syn.c \
+						probe_send.c \
+						probe_send_tcp.c \
+						probe_send_udp.c \
+						scan_defs.c \
+						probe_dequeue.c \
+						probe_list_create.c \
+						probe_list_destroy.c \
 						scan_config_print.c \
+						scan_results_print.c \
 						scan_create.c \
 						scan_destroy.c \
 						scan_init.c \

@@ -21,32 +21,36 @@ probe_new(char *target_ip, uint16_t target_port, double timeout)
 }
 
 t_list *
-probes_create(
+probe_list_create(
 	uint16_t *ports, uint16_t num_ports,
-	char *target_ip, double timeout)
+	char *target_ip, double timeout, t_scan_type scan_flag)
 {
-	t_list *probe_list = NULL;
+	t_list *probe_list;
+	const t_scan_def *def;
+	t_probe *probe;
+	t_list *node;
 
+	probe_list = NULL;
 	for (uint16_t pos = 0; pos < num_ports; ++pos)
 	{
-		t_probe *probe;
-		t_list *node;
-
-		probe = probe_new(target_ip, ports[pos], timeout);
-		if (probe == NULL)
-			continue;
-
-
-		node = ft_lstnew(probe);
-		if (node == NULL)
+		for (int d = 0; (def = scan_def_by_index(d))->name != NULL; d++)
 		{
-			free(probe);
-			continue ;
+			if (!(def->flag & scan_flag))
+				continue;
+
+			probe = probe_new(target_ip, ports[pos], timeout);
+			if (probe == NULL)
+				continue;
+			probe->scan_type = def->flag;
+
+			node = ft_lstnew(probe);
+			if (node == NULL)
+			{
+				free(probe);
+				continue;
+			}
+			ft_lstadd_back(&probe_list, node);
 		}
-
-		ft_lstadd_back(&probe_list, node);
 	}
-
 	return probe_list;
 }
-
