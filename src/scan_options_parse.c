@@ -170,54 +170,9 @@ scan_cli_option_debug(t_opts *scan_options, const char *arg)
 	scan_options->verbose = 2;
 }
 
-void
-scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **argv) 
+static void
+scan_options_validate(t_opts *scan_options)
 {
-	int opt;
-
-	struct option *long_opts;
-	t_scan_cli_option cli_options[] =
-	{
-		{"help", no_argument, 0, 'h', scan_cli_option_help},
-		{"ports", required_argument, 0, 'p', scan_cli_option_ports},
-		{"ip", required_argument, 0, 'i', scan_cli_option_ip},
-		{"file", required_argument, 0, 'f', scan_cli_option_file},
-		{"speedup", required_argument, 0, 's', scan_cli_option_speedup},
-		{"scan", required_argument, 0, 'S', scan_cli_option_scan},
-		{"verbose", no_argument, 0, 'v', scan_cli_option_verbose},
-		{"debug", no_argument, 0, 'd', scan_cli_option_debug},
-		{0}
-	};
-
-	*scan_options = (t_opts){0};
-
-	scan_options_program_name_set(scan_options, argv[0]);
-	long_opts = scan_cli_options_to_long_options(cli_options);
-
-	if (argc < 2)
-	{
-		print_usage(scan_options->program_name);
-		exit(EXIT_FAILURE);
-	}
-
-	while ((opt = getopt_long(argc, argv, "hvdp:i:f:", long_opts, NULL)) != -1)
-	{
-		t_scan_cli_option *cli_option = scan_cli_option_find(cli_options, opt);
-
-		if (cli_option == NULL)
-		{
-			log_message(LOG_LEVEL_DEBUG, "invalid option: %c\n", opt);
-			print_usage(scan_options->program_name);
-			exit(EXIT_FAILURE); 
-		}
-
-		if (cli_option->validate)
-		{
-			cli_option->validate(scan_options, optarg);
-		}
-
-	}
-
 	if (scan_options->scan_flag == SCAN_UNDEFINED)
 		scan_options->scan_flag = SCAN_ALL;
 
@@ -235,6 +190,50 @@ scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **ar
 		log_message(LOG_LEVEL_FATAL, "no target specified. Use --ip or --file.");
 		exit(EXIT_FAILURE);
 	}
+}
 
+void
+scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **argv)
+{
+	int opt;
+	struct option *long_opts;
+	t_scan_cli_option cli_options[] =
+	{
+		{"help", no_argument, 0, 'h', scan_cli_option_help},
+		{"ports", required_argument, 0, 'p', scan_cli_option_ports},
+		{"ip", required_argument, 0, 'i', scan_cli_option_ip},
+		{"file", required_argument, 0, 'f', scan_cli_option_file},
+		{"speedup", required_argument, 0, 's', scan_cli_option_speedup},
+		{"scan", required_argument, 0, 'S', scan_cli_option_scan},
+		{"verbose", no_argument, 0, 'v', scan_cli_option_verbose},
+		{"debug", no_argument, 0, 'd', scan_cli_option_debug},
+		{0}
+	};
+
+	*scan_options = (t_opts){0};
+	scan_options_program_name_set(scan_options, argv[0]);
+
+	if (argc < 2)
+	{
+		print_usage(scan_options->program_name);
+		exit(EXIT_FAILURE);
+	}
+
+	long_opts = scan_cli_options_to_long_options(cli_options);
+	while ((opt = getopt_long(argc, argv, "hvdp:i:f:", long_opts, NULL)) != -1)
+	{
+		t_scan_cli_option *cli_option = scan_cli_option_find(cli_options, opt);
+
+		if (cli_option == NULL)
+		{
+			log_message(LOG_LEVEL_DEBUG, "invalid option: %c\n", opt);
+			print_usage(scan_options->program_name);
+			exit(EXIT_FAILURE);
+		}
+		if (cli_option->validate)
+			cli_option->validate(scan_options, optarg);
+	}
+
+	scan_options_validate(scan_options);
 	*out_arg_index = optind;
 }

@@ -1,34 +1,62 @@
 #include "ft_nmap.h"
 #include "logging/log.h"
 
-#include <time.h>
-
-static void
-scan_type_name(int scan_flag, char *buf, size_t size)
+static int
+scan_thread_open_sockets(t_scan_thread *thread, t_opts *config)
 {
-	const t_scan_def *def;
-	int first;
+	if (config->scan_flag & (SCAN_SYN | SCAN_FIN | SCAN_NULL | SCAN_XMAS | SCAN_ACK))
+		thread->tcp_sock = get_raw_socket_by_protocol("tcp");
 
-	first = 1;
-	buf[0] = '\0';
-	for (int i = 0; (def = scan_def_by_index(i))->name != NULL; i++)
-	{
-		if (def->flag & scan_flag)
-		{
-			if (!first)
-				strncat(buf, "/", size - strlen(buf) - 1);
-			strncat(buf, def->name, size - strlen(buf) - 1);
-			first = 0;
-		}
-	}
+	if (config->scan_flag & SCAN_UDP)
+		thread->udp_sock = get_raw_socket_by_protocol("udp");
+
+	return 0;
 }
 
-static void
-current_time_str(char *buf, size_t size)
+static int
+scan_thread_setup_pcap(t_scan_thread *thread, int thread_id, t_opts *config)
 {
-	time_t t = time(NULL);
-	struct tm *tm_info = localtime(&t);
-	strftime(buf, size, "%H:%M", tm_info);
+	int has_tcp;
+	int has_udp;
+	const char *src_ip;
+	int lo;
+	int hi;
+
+	thread->pcap_handle = get_pcap_handle(config, &thread->datalink);
+	if (thread->pcap_handle == NULL)
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_thread_setup_pcap: pcap_handle is NULL (id:%i)", thread_id);
+		return -1;
+	}
+
+	srand((unsigned int)time(NULL) ^ ((unsigned int)thread_id * 7919));
+	thread->sport_base = 1024 + (rand() % (65535 - 1024 - MAX_PORTS_PER_SCAN));
+
+	has_tcp = config->scan_flag & (SCAN_SYN | SCAN_ACK | SCAN_FIN | SCAN_XMAS | SCAN_NULL);
+	has_udp = config->scan_flag & SCAN_UDP;
+	src_ip = inet_ntoa(thread->dst.sin_addr);
+	lo = thread->sport_base;
+	hi = thread->sport_base + MAX_PORTS_PER_SCAN - 1;
+
+	if (has_tcp && has_udp)
+		snprintf(thread->filter_expr, sizeof(thread->filter_expr),
+			"(tcp and src host %s and dst portrange %d-%d) or (icmp and src host %s)",
+			src_ip, lo, hi, src_ip);
+	else if (has_udp)
+		snprintf(thread->filter_expr, sizeof(thread->filter_expr),
+			"(icmp or udp) and src host %s", src_ip);
+	else
+		snprintf(thread->filter_expr, sizeof(thread->filter_expr),
+			"tcp and src host %s and dst portrange %d-%d",
+			src_ip, lo, hi);
+
+	if (set_pcap_filter(thread->pcap_handle, thread->filter_expr))
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_thread_setup_pcap: set_pcap_filter failed");
+		return -1;
+	}
+
+	return 0;
 }
 
 int
@@ -37,53 +65,14 @@ scan_thread_init(t_scan_thread *thread, int thread_id, t_opts *config)
 	thread->thread_id = thread_id;
 	thread->opts = config;
 
-	if (config->scan_flag
-		& (SCAN_SYN | SCAN_FIN | SCAN_NULL | SCAN_XMAS | SCAN_ACK))
-		thread->tcp_sock = get_raw_socket_by_protocol("tcp");
-
-	if (config->scan_flag & SCAN_UDP)
-		thread->udp_sock = get_raw_socket_by_protocol("udp");
-
-	thread->pcap_handle = get_pcap_handle(config, &thread->datalink);
-	if (thread->pcap_handle == NULL)
-	{
-		log_message(LOG_LEVEL_ERROR, "scan_port_init: pcap_handle is NULL (id:%i)", thread->thread_id);
+	if (scan_thread_open_sockets(thread, config))
 		return -1;
-	}
 
-	srand((unsigned int)time(NULL) ^ ((unsigned int)thread_id * 7919));
-	thread->sport_base = 1024 + (rand() % (65535 - 1024 - MAX_PORTS_PER_SCAN));
-
-	{
-		int has_tcp = config->scan_flag & (SCAN_SYN | SCAN_ACK | SCAN_FIN | SCAN_XMAS | SCAN_NULL);
-		int has_udp = config->scan_flag & SCAN_UDP;
-		const char *src_ip = inet_ntoa(thread->dst.sin_addr);
-		int lo = thread->sport_base;
-		int hi = thread->sport_base + MAX_PORTS_PER_SCAN - 1;
-
-		if (has_tcp && has_udp)
-			snprintf(thread->filter_expr, sizeof(thread->filter_expr),
-				"(tcp and src host %s and dst portrange %d-%d) or (icmp and src host %s)",
-				src_ip, lo, hi, src_ip);
-		else if (has_udp)
-			snprintf(thread->filter_expr, sizeof(thread->filter_expr),
-				"(icmp or udp) and src host %s", src_ip);
-		else
-			snprintf(thread->filter_expr, sizeof(thread->filter_expr),
-				"tcp and src host %s and dst portrange %d-%d",
-				src_ip, lo, hi);
-	}
-
-	if (set_pcap_filter(thread->pcap_handle, thread->filter_expr))
-	{
-		log_message(LOG_LEVEL_ERROR, "scan_port_init: set_pcap_filter failed");
+	if (scan_thread_setup_pcap(thread, thread_id, config))
 		return -1;
-	}
-
 
 	return 0;
 }
-
 
 static int
 count_probes(t_probe **probes)
@@ -264,15 +253,96 @@ scan_thread_dispatch(
 	return 0;
 }
 
+static void
+scan_thread_cleanup(t_scan_thread *thread)
+{
+	pcap_close(thread->pcap_handle);
+	if (thread->tcp_sock > 0)
+		close(thread->tcp_sock);
+	if (thread->udp_sock > 0)
+		close(thread->udp_sock);
+	free(thread->probes);
+}
+
+static void
+scan_run_sequential(t_engine *scan_eng, t_opts *opts, uint16_t num_ports)
+{
+	t_scan_thread *thread;
+	struct timeval scan_start;
+	struct timeval scan_end;
+	double elapsed;
+
+	thread = calloc(1, sizeof(t_scan_thread));
+	if (thread == NULL)
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: calloc failed");
+		exit(EXIT_FAILURE);
+	}
+
+	thread->dst = scan_eng->dst;
+	if (scan_thread_init(thread, 0, opts))
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: scan_thread_init failed");
+		free(thread);
+		exit(EXIT_FAILURE);
+	}
+
+	scan_eng->probes_pending = scan_eng->probes;
+	thread->probes = probe_dequeue(&scan_eng->probes_pending, scan_eng->probes_total);
+	if (thread->probes == NULL)
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: probe_dequeue failed");
+		free(thread);
+		exit(EXIT_FAILURE);
+	}
+
+	gettimeofday(&scan_start, NULL);
+	scan_thread_run(thread, opts);
+	gettimeofday(&scan_end, NULL);
+
+	elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)
+		+ (double)(scan_end.tv_usec - scan_start.tv_usec) / 1e6;
+	scan_results_print(thread, 1, opts->target, elapsed);
+
+	scan_thread_cleanup(thread);
+	free(thread);
+}
+
+static void
+scan_run_parallel(t_engine *scan_eng, t_opts *opts, uint16_t num_ports)
+{
+	t_scan_thread *threads;
+	struct timeval scan_start;
+	struct timeval scan_end;
+	double elapsed;
+
+	threads = calloc(opts->num_threads, sizeof(t_scan_thread));
+	if (threads == NULL)
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_run_parallel: calloc failed");
+		exit(EXIT_FAILURE);
+	}
+
+	scan_eng->probes_pending = scan_eng->probes;
+	gettimeofday(&scan_start, NULL);
+	scan_thread_dispatch(threads, &scan_eng->probes_pending, scan_eng, opts);
+	gettimeofday(&scan_end, NULL);
+
+	elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)
+		+ (double)(scan_end.tv_usec - scan_start.tv_usec) / 1e6;
+	scan_results_print(threads, opts->num_threads, opts->target, elapsed);
+
+	for (uint16_t i = 0; i < opts->num_threads; i++)
+		scan_thread_cleanup(&threads[i]);
+	free(threads);
+}
+
 void
 scan_run(t_engine *scan_eng, t_opts *opts)
 {
 	unsigned short *ports;
 	unsigned short num_ports;
 	t_list *node;
-	struct timeval scan_start;
-	struct timeval scan_end;
-	double elapsed;
 
 	if (scan_eng == NULL)
 	{
@@ -310,12 +380,6 @@ scan_run(t_engine *scan_eng, t_opts *opts)
 
 	scan_config_print(scan_eng, num_ports);
 
-	char scan_type_buf[64];
-	char time_buf[6];
-	scan_type_name(opts->scan_flag, scan_type_buf, sizeof(scan_type_buf));
-	current_time_str(time_buf, sizeof(time_buf));
-	log_message(LOG_LEVEL_INFO, "Initiating %s Scan at %s", scan_type_buf, time_buf);
-
 	char *resolved_ip = inet_ntoa(scan_eng->dst.sin_addr);
 	if (strcmp(opts->target, resolved_ip) == 0)
 		log_message(LOG_LEVEL_INFO, "Scanning %s [%d ports]",
@@ -324,88 +388,10 @@ scan_run(t_engine *scan_eng, t_opts *opts)
 		log_message(LOG_LEVEL_INFO, "Scanning %s (%s) [%d ports]",
 			opts->target, resolved_ip, num_ports);
 
-	gettimeofday(&scan_start, NULL);
-
 	if (!opts->num_threads)
-	{
-		t_scan_thread *thread;
-
-		thread = calloc(1, sizeof(t_scan_thread));
-		if (thread == NULL)
-		{
-			log_message(LOG_LEVEL_ERROR, "scan_run: calloc failed");
-			exit(EXIT_FAILURE);
-		}
-
-		thread->dst = scan_eng->dst;
-
-		if (scan_thread_init(thread, 0, opts))
-		{
-			log_message(LOG_LEVEL_ERROR, "scan_run: scan_thread_init failed");
-			free(thread);
-			exit(EXIT_FAILURE);
-		}
-
-		scan_eng->probes_pending = scan_eng->probes;
-		thread->probes = probe_dequeue(&scan_eng->probes_pending, scan_eng->probes_total);
-		if (thread->probes == NULL)
-		{
-			log_message(LOG_LEVEL_ERROR, "scan_run: probe_dequeue failed");
-			free(thread);
-			exit(EXIT_FAILURE);
-		}
-
-		scan_thread_run(thread, opts);
-		gettimeofday(&scan_end, NULL);
-
-		elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)
-			+ (double)(scan_end.tv_usec - scan_start.tv_usec) / 1e6;
-		current_time_str(time_buf, sizeof(time_buf));
-		log_message(LOG_LEVEL_INFO, "Completed %s Scan at %s, %.2fs elapsed (%d total ports)",
-			scan_type_buf, time_buf, elapsed, num_ports);
-		scan_results_print(thread, 1, opts->target, elapsed);
-
-		pcap_close(thread->pcap_handle);
-		if (thread->tcp_sock > 0)
-			close(thread->tcp_sock);
-		if (thread->udp_sock > 0)
-			close(thread->udp_sock);
-		free(thread->probes);
-		free(thread);
-	}
+		scan_run_sequential(scan_eng, opts, num_ports);
 	else
-	{
-		t_scan_thread *threads;
-
-		threads = calloc(opts->num_threads, sizeof(t_scan_thread));
-		if (threads == NULL)
-		{
-			log_message(LOG_LEVEL_ERROR, "scan_run: calloc failed");
-			exit(EXIT_FAILURE);
-		}
-
-		scan_eng->probes_pending = scan_eng->probes;
-		scan_thread_dispatch(threads, &scan_eng->probes_pending, scan_eng, opts);
-		gettimeofday(&scan_end, NULL);
-
-		elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)
-			+ (double)(scan_end.tv_usec - scan_start.tv_usec) / 1e6;
-		current_time_str(time_buf, sizeof(time_buf));
-		log_message(LOG_LEVEL_INFO, "Completed %s Scan at %s, %.2fs elapsed (%d total ports)",
-			scan_type_buf, time_buf, elapsed, num_ports);
-		scan_results_print(threads, opts->num_threads, opts->target, elapsed);
-
-		for (uint16_t i = 0; i < opts->num_threads; i++)
-		{
-			pcap_close(threads[i].pcap_handle);
-			if (threads[i].tcp_sock > 0)
-				close(threads[i].tcp_sock);
-			if (threads[i].udp_sock > 0)
-				close(threads[i].udp_sock);
-			free(threads[i].probes);
-		}
-		free(threads);
-	}
+		scan_run_parallel(scan_eng, opts, num_ports);
 
 	free(ports);
 }
