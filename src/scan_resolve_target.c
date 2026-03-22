@@ -2,7 +2,7 @@
 #include "logging/log.h"
 
 int
-scan_target_sockaddr_set(struct sockaddr_in *sockaddr, const char *hostname)
+scan_resolve_target(struct sockaddr_in *sockaddr, const char *hostname)
 {
 	struct addrinfo hints, *res;
 	int s;

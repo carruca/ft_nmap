@@ -1,12 +1,12 @@
 #include "ft_nmap.h"
 
 void
-scan_destroy(t_engine *scan_eng)
+scan_destroy(t_scan_ctx *ctx)
 {
-	if (scan_eng)
+	if (ctx)
 	{
-		probe_list_destroy(scan_eng);
-		scan_options_destroy(scan_eng->opts);
-		free(scan_eng);
+		probe_list_destroy(ctx);
+		free(ctx->ports);
+		free(ctx);
 	}
 }

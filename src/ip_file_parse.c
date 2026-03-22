@@ -2,7 +2,7 @@
 #include "logging/log.h"
 
 void
-ip_file_parse(t_opts *opts, const char *filename)
+ip_file_parse(t_scan_opts *opts, const char *filename)
 {
 	FILE *stream;
 	char line[HOST_NAME_MAX];

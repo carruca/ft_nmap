@@ -1,7 +1,7 @@
 #include "ft_nmap.h"
 
 int
-probe_send(t_scan_thread *thread, t_probe *probe, t_opts *opts, uint16_t sport)
+probe_send(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport)
 {
 	const t_scan_def *def;
 

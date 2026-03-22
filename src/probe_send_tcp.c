@@ -2,12 +2,9 @@
 #include "tcp_checksum.h"
 #include "logging/log.h"
 
-#include <errno.h>
-
-extern int errno;
 
 int
-probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_opts *opts, uint16_t sport)
+probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport)
 {
 	ssize_t bytes_sent;
 	struct tcphdr *th;
@@ -33,10 +30,7 @@ probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_opts *opts, uint16_t spo
 		(struct sockaddr *)&thread->dst, sizeof(struct sockaddr_in));
 	if (bytes_sent > 0)
 	{
-		if (gettimeofday(&probe->time_sent, NULL) < 0)
-			error(EXIT_FAILURE, errno, "gettimeofday");
-		probe->src_port = sport;
-		probe->status   = PROBE_SENT;
+		probe_mark_sent(probe, sport);
 		log_message(LOG_LEVEL_DEBUG, "Sending %s to %s:%u (sport: %u)",
 			def->name, probe->dst_ip, probe->dst_port, sport);
 		return 0;

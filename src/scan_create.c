@@ -3,15 +3,16 @@
 
 #include <stdlib.h>
 
-t_engine *scan_create(void)
+t_scan_ctx *scan_create(void)
 {
-    t_engine *scan_eng;
+	t_scan_ctx *ctx;
 
-    scan_eng = calloc(1, sizeof(t_engine));
-    if (!scan_eng)
-    {
-        log_message(LOG_LEVEL_FATAL, "Bad alloc");
-        exit(EXIT_FAILURE);
-    }
-    return scan_eng;
+	ctx = calloc(1, sizeof(t_scan_ctx));
+	if (!ctx)
+	{
+		log_message(LOG_LEVEL_FATAL, "Bad alloc");
+		return NULL;
+	}
+	ctx->timeout = 2.0;
+	return ctx;
 }

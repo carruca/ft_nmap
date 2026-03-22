@@ -3,8 +3,8 @@
 #include <stdlib.h>
 
 void
-probe_list_destroy(t_engine *scan_eng)
+probe_list_destroy(t_scan_ctx *ctx)
 {
-	if (scan_eng)
-		ft_lstclear(&scan_eng->probes, free);
+	if (ctx)
+		ft_lstclear(&ctx->probes, free);
 }

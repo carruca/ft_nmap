@@ -25,7 +25,7 @@ fqdn_is_valid_ipv4(const char *str)
 		octet = strtol(token, &endptr, 10);
 		if (*endptr != '\0' || octet < 0 || octet > 255)
 			return 0;
-		count++;
+		++count;
 	}
 	return count == 4;
 }
@@ -55,7 +55,7 @@ fqdn_is_valid_hostname(const char *str)
 			return 0;
 		if (token[0] == '-' || token[label_len - 1] == '-')
 			return 0;
-		for (c = token; *c; c++)
+		for (c = token; *c; ++c)
 			if (!isalnum((unsigned char)*c) && *c != '-')
 				return 0;
 	}

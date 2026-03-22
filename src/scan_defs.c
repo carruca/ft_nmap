@@ -23,7 +23,7 @@ scan_def_by_index(int index)
 const t_scan_def *
 scan_def_by_flag(t_scan_type flag)
 {
-	for (int i = 0; g_scan_defs[i].name != NULL; i++)
+	for (int i = 0; g_scan_defs[i].name != NULL; ++i)
 		if (g_scan_defs[i].flag == flag)
 			return &g_scan_defs[i];
 	return NULL;

@@ -2,11 +2,12 @@
 #include "logging/log.h"
 
 #include <getopt.h>
+#include <libgen.h>
 
 extern char *optarg;
 extern int optind;
 
-typedef void (*f_scan_cli_option_handler)(t_opts *scan_options, const char *arg);
+typedef void (*f_scan_cli_option_handler)(t_scan_opts *opts, const char *arg);
 
 typedef struct
 {
@@ -64,25 +65,25 @@ scan_cli_options_to_long_options(t_scan_cli_option *cli_options)
 }
 
 void
-scan_cli_option_help(t_opts *scan_options, const char *arg)
+scan_cli_option_help(t_scan_opts *opts, const char *arg)
 {
 	(void)arg;
-	print_usage(scan_options->program_name);
+	print_usage(opts->program_name);
 	exit(EXIT_SUCCESS);
 }
 
 void
-scan_cli_option_ports(t_opts *scan_options, const char *arg)
+scan_cli_option_ports(t_scan_opts *opts, const char *arg)
 {
 	const char *c;
 
 	(void)arg;
-	if (scan_options->portlist)
+	if (opts->portlist)
 	{
 		log_message(LOG_LEVEL_FATAL, "only one --ports option allowed, separate multiples ranges with commas.");
 		exit(EXIT_FAILURE);
 	}
-	for (c = optarg; *c; c++)
+	for (c = optarg; *c; ++c)
 	{
 		if (!isdigit((unsigned char)*c) && *c != ',' && *c != '-')
 		{
@@ -90,14 +91,14 @@ scan_cli_option_ports(t_opts *scan_options, const char *arg)
 			exit(EXIT_FAILURE);
 		}
 	}
-	scan_options->portlist = strdup(optarg);
+	opts->portlist = strdup(optarg);
 }
 
 void
-scan_cli_option_ip(t_opts *scan_options, const char *arg)
+scan_cli_option_ip(t_scan_opts *opts, const char *arg)
 {
 	(void)arg;
-	if (scan_options->num_targets > 0)
+	if (opts->num_targets > 0)
 	{
 		log_message(LOG_LEVEL_FATAL, "you can only use --ip option once.");
 		exit(EXIT_FAILURE);
@@ -107,30 +108,30 @@ scan_cli_option_ip(t_opts *scan_options, const char *arg)
 		log_message(LOG_LEVEL_FATAL, "invalid target: must be a valid IPv4 or hostname.");
 		exit(EXIT_FAILURE);
 	}
-	scan_options->targets = malloc(sizeof(char *));
-	if (scan_options->targets == NULL)
+	opts->targets = malloc(sizeof(char *));
+	if (opts->targets == NULL)
 	{
 		log_message(LOG_LEVEL_FATAL, "malloc failed");
 		exit(EXIT_FAILURE);
 	}
-	scan_options->targets[0] = strdup(optarg);
-	scan_options->num_targets = 1;
+	opts->targets[0] = strdup(optarg);
+	opts->num_targets = 1;
 }
 
 void
-scan_cli_option_file(t_opts *scan_options, const char *arg)
+scan_cli_option_file(t_scan_opts *opts, const char *arg)
 {
 	(void)arg;
-	if (scan_options->filename)
+	if (opts->filename)
 	{
 		log_message(LOG_LEVEL_FATAL, "you can only use --file option once.");
 		exit(EXIT_FAILURE);
 	}
-	scan_options->filename = strdup(optarg);
+	opts->filename = strdup(optarg);
 }
 
 void
-scan_cli_option_speedup(t_opts *scan_options, const char *arg)
+scan_cli_option_speedup(t_scan_opts *opts, const char *arg)
 {
 	int n;
 
@@ -141,15 +142,15 @@ scan_cli_option_speedup(t_opts *scan_options, const char *arg)
 		log_message(LOG_LEVEL_FATAL, "speedup must be between 0 and %d.", MAXTHREADS);
 		exit(EXIT_FAILURE);
 	}
-	scan_options->num_threads = (unsigned short)n;
+	opts->num_threads = (unsigned short)n;
 }
 
 void
-scan_cli_option_scan(t_opts *scan_options, const char *arg)
+scan_cli_option_scan(t_scan_opts *opts, const char *arg)
 {
 	(void)arg;
-	scan_options->scan_flag = get_scan_type_by_name(optarg);
-	if (scan_options->scan_flag == 0)
+	opts->scan_flag = get_scan_type_by_name(optarg);
+	if (opts->scan_flag == 0)
 	{
 		log_message(LOG_LEVEL_FATAL, "scan flag is invalid.");
 		exit(EXIT_FAILURE);
@@ -157,35 +158,35 @@ scan_cli_option_scan(t_opts *scan_options, const char *arg)
 }
 
 void
-scan_cli_option_verbose(t_opts *scan_options, const char *arg)
+scan_cli_option_verbose(t_scan_opts *opts, const char *arg)
 {
 	(void)arg;
-	scan_options->verbose++;
+	++opts->verbose;
 }
 
 void
-scan_cli_option_debug(t_opts *scan_options, const char *arg)
+scan_cli_option_debug(t_scan_opts *opts, const char *arg)
 {
 	(void)arg;
-	scan_options->verbose = 2;
+	opts->verbose = 2;
 }
 
 static void
-scan_options_validate(t_opts *scan_options)
+opts_validate(t_scan_opts *opts)
 {
-	if (scan_options->scan_flag == SCAN_UNDEFINED)
-		scan_options->scan_flag = SCAN_ALL;
+	if (opts->scan_flag == SCAN_UNDEFINED)
+		opts->scan_flag = SCAN_ALL;
 
-	if (scan_options->num_targets > 0 && scan_options->filename)
+	if (opts->num_targets > 0 && opts->filename)
 	{
 		log_message(LOG_LEVEL_FATAL, "--ip and --file options cannot be used at the same time.");
 		exit(EXIT_FAILURE);
 	}
 
-	if (scan_options->filename)
-		ip_file_parse(scan_options, scan_options->filename);
+	if (opts->filename)
+		ip_file_parse(opts, opts->filename);
 
-	if (scan_options->num_targets == 0)
+	if (opts->num_targets == 0)
 	{
 		log_message(LOG_LEVEL_FATAL, "no target specified. Use --ip or --file.");
 		exit(EXIT_FAILURE);
@@ -193,7 +194,7 @@ scan_options_validate(t_opts *scan_options)
 }
 
 void
-scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **argv)
+scan_opts_parse(t_scan_opts *opts, int *out_arg_index, int argc, char **argv)
 {
 	int opt;
 	struct option *long_opts;
@@ -210,12 +211,12 @@ scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **ar
 		{0}
 	};
 
-	*scan_options = (t_opts){0};
-	scan_options_program_name_set(scan_options, argv[0]);
+	*opts = (t_scan_opts){0};
+	opts->program_name = basename(argv[0]);
 
 	if (argc < 2)
 	{
-		print_usage(scan_options->program_name);
+		print_usage(opts->program_name);
 		exit(EXIT_FAILURE);
 	}
 
@@ -227,13 +228,13 @@ scan_options_parse(t_opts *scan_options, int *out_arg_index, int argc, char **ar
 		if (cli_option == NULL)
 		{
 			log_message(LOG_LEVEL_DEBUG, "invalid option: %c\n", opt);
-			print_usage(scan_options->program_name);
+			print_usage(opts->program_name);
 			exit(EXIT_FAILURE);
 		}
 		if (cli_option->validate)
-			cli_option->validate(scan_options, optarg);
+			cli_option->validate(opts, optarg);
 	}
 
-	scan_options_validate(scan_options);
+	opts_validate(opts);
 	*out_arg_index = optind;
 }

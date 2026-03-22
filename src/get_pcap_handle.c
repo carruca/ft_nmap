@@ -24,7 +24,7 @@ pcap_find_iface_for_target(const char *target, pcap_if_t *alldevs)
 }
 
 pcap_t *
-get_pcap_handle(t_opts *opts, int *datalink)
+get_pcap_handle(t_scan_opts *opts, int *datalink)
 {
 	pcap_if_t *alldevs;
 	pcap_if_t *dev;
@@ -58,7 +58,7 @@ get_pcap_handle(t_opts *opts, int *datalink)
 		exit(EXIT_FAILURE);
 	}
 
-	if (pcap_set_timeout(pcap_handle, 1000) != 0)
+	if (pcap_set_timeout(pcap_handle, 10) != 0)
 	{
 		fprintf(stderr, "Couldn't set packet buffer timeout: %s\n", pcap_geterr(pcap_handle));
 		exit(EXIT_FAILURE);

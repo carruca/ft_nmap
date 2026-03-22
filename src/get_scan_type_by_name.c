@@ -10,11 +10,11 @@ scan_type_by_single_name(const char *name)
 	char upper[16];
 	size_t i;
 
-	for (i = 0; i < sizeof(upper) - 1 && name[i]; i++)
+	for (i = 0; i < sizeof(upper) - 1 && name[i]; ++i)
 		upper[i] = (char)toupper((unsigned char)name[i]);
 	upper[i] = '\0';
 
-	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; d++)
+	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; ++d)
 	{
 		if (strcmp(def->name, upper) == 0)
 			return def->flag;

@@ -111,7 +111,7 @@ typedef struct s_probe t_probe;
 
 typedef struct s_scan_thread t_scan_thread;
 
-struct s_opts
+struct s_scan_opts
 {
   unsigned short num_threads;
   t_scan_type scan_flag;
@@ -125,19 +125,19 @@ struct s_opts
   int num_targets;
 };
 
-typedef struct s_opts t_opts;
+typedef struct s_scan_opts t_scan_opts;
 
-struct s_engine
+struct s_scan_ctx
 {
   unsigned int probes_total;
-  t_opts *opts;
   t_list *probes;
-  t_list *probes_pending;
   struct sockaddr_in dst;
   double timeout;
+  unsigned short *ports;
+  unsigned short num_ports;
 };
 
-typedef struct s_engine t_engine;
+typedef struct s_scan_ctx t_scan_ctx;
 
 struct s_scan_thread
 {
@@ -157,28 +157,28 @@ struct s_scan_thread
 
   struct sockaddr_in dst;
 
-  t_opts *opts;
+  t_scan_opts *opts;
 };
 
-pcap_t *get_pcap_handle(t_opts *opts, int *datalink);
+pcap_t *get_pcap_handle(t_scan_opts *opts, int *datalink);
 t_list *probe_list_create(uint16_t *ports, uint16_t num_ports, char *target_ip, double timeout, t_scan_type scan_flag);
-void probe_list_destroy(t_engine *scan_eng);
-void scan_options_destroy(t_opts *opts);
-void scan_init(t_engine *scan_eng);
+void probe_list_destroy(t_scan_ctx *ctx);
+void scan_opts_destroy(t_scan_opts *opts);
 int set_pcap_filter(pcap_t *pcap_handle, char *filter_exp);
-void scan_options_parse(t_opts *scan_options, int *arg_index, int argc, char **argv);
+void scan_opts_parse(t_scan_opts *opts, int *arg_index, int argc, char **argv);
 t_scan_type get_scan_type_by_name(char *expr);
-void ip_file_parse(t_opts *opts, const char *filename);
+void ip_file_parse(t_scan_opts *opts, const char *filename);
 void print_usage(char *name);
-void scan_destroy(t_engine *scan_eng);
+void scan_destroy(t_scan_ctx *ctx);
 int get_raw_socket_by_protocol(const char *protocol_name);
-int probe_send(t_scan_thread *thread, t_probe *probe, t_opts *opts, uint16_t sport);
-int probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_opts *opts, uint16_t sport);
-int probe_send_udp(t_scan_thread *thread, t_probe *probe, t_opts *opts, uint16_t sport);
+int probe_send(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport);
+void probe_mark_sent(t_probe *probe, uint16_t sport);
+int probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport);
+int probe_send_udp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport);
 int probe_match(t_probe *probe, struct timeval ts, const u_char *pkt_data, int datalink);
-int scan_source_sockaddr_set(struct sockaddr_in *sockaddr);
-int scan_target_sockaddr_set(struct sockaddr_in *sockaddr, const char *hostname);
-void scan_config_print(const t_engine *scan_eng, int num_ports);
+int scan_detect_source(struct sockaddr_in *sockaddr, const struct sockaddr_in *dst);
+int scan_resolve_target(struct sockaddr_in *sockaddr, const char *hostname);
+void scan_config_print(const t_scan_ctx *ctx, const t_scan_opts *opts, int num_ports);
 void scan_results_print(t_scan_thread *threads, int num_threads, const char *target, double scan_duration);
 unsigned short tcp_checksum(const struct sockaddr_in *src_sockaddr, const struct sockaddr_in *dst_sockaddr, const struct tcphdr *th);
 unsigned short checksum(char *buffer, size_t bufsize);
@@ -188,15 +188,16 @@ void error(int status, int errnum, const char *format, ...);
 int  fqdn_is_valid(const char *str);
 const t_scan_def *scan_def_by_flag(t_scan_type flag);
 const t_scan_def *scan_def_by_index(int index);
-void scan_run(t_engine *scan_eng, t_opts *scan_options);
-void scan_options_program_name_set(t_opts *scan_options, const char *program_name);
-t_engine *scan_create();
+void scan_run(t_scan_ctx *ctx, t_scan_opts *opts);
+t_scan_ctx *scan_create();
 
 t_probe *probe_new(char *target_ip, uint16_t target_port, double timeout);
-int scan_thread_init(t_scan_thread *thread, int thread_id, t_opts *config);
-int scan_thread_run(t_scan_thread *thread, t_opts *opts);
+int count_probes(t_probe **probes);
+void scan_thread_destroy(t_scan_thread *thread);
+int scan_thread_init(t_scan_thread *thread, int thread_id, t_scan_opts *config);
+int scan_thread_run(t_scan_thread *thread, t_scan_opts *opts);
 void *scan_thread_entry(void *data);
-int scan_thread_dispatch(t_scan_thread *threads, t_list **pending_list, t_engine *ctx, t_opts *config);
+int scan_thread_dispatch(t_scan_thread *threads, t_list **pending_list, t_scan_ctx *ctx, t_scan_opts *config);
 t_probe **probe_dequeue(t_list **pending_node, int num_probes);
 
 #endif

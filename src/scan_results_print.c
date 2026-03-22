@@ -22,7 +22,7 @@ print_probe_line(t_probe *probe)
 	def = scan_def_by_flag(probe->scan_type);
 	snprintf(port_col, sizeof(port_col), "%u/%s",
 		probe->dst_port, def ? def->name : "?");
-	for (int i = 0; port_col[i]; i++)
+	for (int i = 0; port_col[i]; ++i)
 		port_col[i] = (char)tolower((unsigned char)port_col[i]);
 	printf("%-10s %-14s %-s\n",
 		port_col,
@@ -44,17 +44,17 @@ scan_results_print(t_scan_thread *threads, int num_threads,
 
 	int has_open = 0;
 	int has_other = 0;
-	for (int t = 0; t < num_threads; t++)
-		for (int i = 0; threads[t].probes[i] != NULL; i++)
+	for (int t = 0; t < num_threads; ++t)
+		for (int i = 0; threads[t].probes[i] != NULL; ++i)
 			if (threads[t].probes[i]->result == PORT_OPEN)
 				has_open = 1;
 			else
 				has_other = 1;
 
 	const t_scan_def *def;
-	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; d++)
-		for (int t = 0; t < num_threads; t++)
-			for (int i = 0; threads[t].probes[i] != NULL; i++)
+	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; ++d)
+		for (int t = 0; t < num_threads; ++t)
+			for (int i = 0; threads[t].probes[i] != NULL; ++i)
 			{
 				t_probe *probe = threads[t].probes[i];
 				if (probe->scan_type == def->flag && probe->result == PORT_OPEN)
@@ -64,9 +64,9 @@ scan_results_print(t_scan_thread *threads, int num_threads,
 	if (has_open && has_other)
 		printf("\n");
 
-	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; d++)
-		for (int t = 0; t < num_threads; t++)
-			for (int i = 0; threads[t].probes[i] != NULL; i++)
+	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; ++d)
+		for (int t = 0; t < num_threads; ++t)
+			for (int i = 0; threads[t].probes[i] != NULL; ++i)
 			{
 				t_probe *probe = threads[t].probes[i];
 				if (probe->scan_type == def->flag && probe->result != PORT_OPEN)

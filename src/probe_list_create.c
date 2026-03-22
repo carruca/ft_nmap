@@ -33,7 +33,7 @@ probe_list_create(
 	probe_list = NULL;
 	for (uint16_t pos = 0; pos < num_ports; ++pos)
 	{
-		for (int d = 0; (def = scan_def_by_index(d))->name != NULL; d++)
+		for (int d = 0; (def = scan_def_by_index(d))->name != NULL; ++d)
 		{
 			if (!(def->flag & scan_flag))
 				continue;
