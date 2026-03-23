@@ -1,6 +1,7 @@
 #include "ft_nmap.h"
 
 #include <ctype.h>
+#include <stdbool.h>
 
 static const char *
 port_state_str(t_port_state state)
@@ -32,46 +33,72 @@ print_probe_line(t_probe *probe)
 		serv ? serv->s_name : "unknown");
 }
 
+static inline void
+print_thread_probes_by_scan_type(t_scan_thread *thread, t_scan_type scan_flag, int open)
+{
+	for (int i = 0; thread->probes[i] != NULL; ++i)
+	{
+		t_probe *probe = thread->probes[i];
+		if (probe->scan_type == scan_flag && (probe->result == PORT_OPEN) == open)
+			print_probe_line(probe);
+	}
+}
+
+static void
+scan_results_print_open_or_not(t_scan_thread *threads, int num_threads, int open)
+{
+	const t_scan_def *def;
+
+	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; ++d)
+		for (int thread_index = 0; thread_index < num_threads; ++thread_index)
+			print_thread_probes_by_scan_type(&threads[thread_index], def->flag, open);
+}
+
+static inline void
+update_open_other_flags(t_scan_thread *threads, int thread_index, int *has_open, int *has_other)
+{
+	for (int index = 0; threads[thread_index].probes[index] != NULL; ++index)
+		{
+			if (threads[thread_index].probes[index]->result == PORT_OPEN)
+			{
+				*has_open = 1;
+			}
+			else
+			{
+				*has_other = 1;
+			}
+		}
+}
+
 void
 scan_results_print(t_scan_thread *threads, int num_threads,
 	const char *target, double scan_duration)
 {
-	printf("Scan took %.2f sec\n", scan_duration);
-	char *resolved_ip = inet_ntoa(threads[0].dst.sin_addr);
-	if (strcmp(target, resolved_ip) == 0)
-		printf("Scan results for %s\n", target);
-	else
-		printf("Scan results for %s (%s)\n", target, resolved_ip);
-	printf("%-10s %-14s %-s\n", "PORT", "STATE", "SERVICE");
-
 	int has_open = 0;
 	int has_other = 0;
-	for (int t = 0; t < num_threads; ++t)
-		for (int i = 0; threads[t].probes[i] != NULL; ++i)
-			if (threads[t].probes[i]->result == PORT_OPEN)
-				has_open = 1;
-			else
-				has_other = 1;
+	char *resolved_ip = inet_ntoa(threads[0].dst.sin_addr);
 
-	const t_scan_def *def;
-	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; ++d)
-		for (int t = 0; t < num_threads; ++t)
-			for (int i = 0; threads[t].probes[i] != NULL; ++i)
-			{
-				t_probe *probe = threads[t].probes[i];
-				if (probe->scan_type == def->flag && probe->result == PORT_OPEN)
-					print_probe_line(probe);
-			}
+	printf("Scan took %.2f sec\n", scan_duration);
+	if (strcmp(target, resolved_ip) == 0)
+	{
+		printf("Scan results for %s\n", target);
+	}
+	else
+  {
+		printf("Scan results for %s (%s)\n", target, resolved_ip);
+	}
+
+	printf("%-10s %-14s %-s\n", "PORT", "STATE", "SERVICE");
+
+	for (int index = 0; index < num_threads; ++index)
+	{
+		update_open_other_flags(threads, index, &has_open, &has_other);
+	}
+
+	scan_results_print_open_or_not(threads, num_threads, true);
 
 	if (has_open && has_other)
 		printf("\n");
 
-	for (int d = 0; (def = scan_def_by_index(d))->name != NULL; ++d)
-		for (int t = 0; t < num_threads; ++t)
-			for (int i = 0; threads[t].probes[i] != NULL; ++i)
-			{
-				t_probe *probe = threads[t].probes[i];
-				if (probe->scan_type == def->flag && probe->result != PORT_OPEN)
-					print_probe_line(probe);
-			}
+	scan_results_print_open_or_not(threads, num_threads, false);
 }

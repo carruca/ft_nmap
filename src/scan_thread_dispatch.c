@@ -2,7 +2,7 @@
 #include "logging/log.h"
 
 static void
-abort_started_threads(t_scan_thread *threads, uint16_t count)
+join_and_destroy_threads(t_scan_thread *threads, uint16_t count)
 {
 	for (uint16_t j = 0; j < count; ++j)
 	{
@@ -36,7 +36,7 @@ scan_thread_dispatch(
 		{
 			log_message(LOG_LEVEL_ERROR, "scan_thread_dispatch: scan_thread_init failed");
 			scan_thread_destroy(cur);
-			abort_started_threads(threads, i);
+			join_and_destroy_threads(threads, i);
 			return -1;
 		}
 
@@ -45,7 +45,7 @@ scan_thread_dispatch(
 		{
 			log_message(LOG_LEVEL_ERROR, "scan_thread_dispatch: probe_dequeue failed");
 			scan_thread_destroy(cur);
-			abort_started_threads(threads, i);
+			join_and_destroy_threads(threads, i);
 			return -1;
 		}
 
@@ -53,7 +53,7 @@ scan_thread_dispatch(
 		{
 			log_message(LOG_LEVEL_ERROR, "scan_thread_dispatch: pthread_create failed");
 			scan_thread_destroy(cur);
-			abort_started_threads(threads, i);
+			join_and_destroy_threads(threads, i);
 			return -1;
 		}
 	}

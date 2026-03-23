@@ -193,6 +193,7 @@ void error(int status, int errnum, const char *format, ...);
 int  fqdn_is_valid(const char *str);
 const t_scan_def *scan_def_by_flag(t_scan_type flag);
 const t_scan_def *scan_def_by_index(int index);
+t_port_state      scan_def_timeout_result(const t_scan_def *def);
 void scan_run(t_scan_ctx *ctx, t_scan_opts *opts);
 t_scan_ctx *scan_create();
 

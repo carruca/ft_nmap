@@ -1,7 +1,7 @@
 #include "ft_nmap.h"
 #include "logging/log.h"
 
-static int
+static void
 scan_thread_open_sockets(t_scan_thread *thread, t_scan_opts *config)
 {
 	if (config->scan_flag & (SCAN_SYN | SCAN_FIN | SCAN_NULL | SCAN_XMAS | SCAN_ACK))
@@ -9,8 +9,13 @@ scan_thread_open_sockets(t_scan_thread *thread, t_scan_opts *config)
 
 	if (config->scan_flag & SCAN_UDP)
 		thread->udp_sock = get_raw_socket_by_protocol("udp");
+}
 
-	return 0;
+static void
+scan_thread_init_sport(t_scan_thread *thread, int thread_id)
+{
+	srand((unsigned int)time(NULL) ^ ((unsigned int)thread_id * (unsigned int)SPORT_RAND_PRIME));
+	thread->sport_base = SPORT_MIN + (rand() % (65535 - SPORT_MIN - MAX_PORTS_PER_SCAN));
 }
 
 static int
@@ -28,9 +33,6 @@ scan_thread_setup_pcap(t_scan_thread *thread, int thread_id, t_scan_opts *config
 		log_message(LOG_LEVEL_ERROR, "scan_thread_setup_pcap: pcap_handle is NULL (id:%i)", thread_id);
 		return -1;
 	}
-
-	srand((unsigned int)time(NULL) ^ ((unsigned int)thread_id * (unsigned int)SPORT_RAND_PRIME));
-	thread->sport_base = SPORT_MIN + (rand() % (65535 - SPORT_MIN - MAX_PORTS_PER_SCAN));
 
 	has_tcp = config->scan_flag & (SCAN_SYN | SCAN_ACK | SCAN_FIN | SCAN_XMAS | SCAN_NULL);
 	has_udp = config->scan_flag & SCAN_UDP;
@@ -65,8 +67,9 @@ scan_thread_init(t_scan_thread *thread, int thread_id, t_scan_opts *config)
 	thread->thread_id = thread_id;
 	thread->opts = config;
 
-	if (scan_thread_open_sockets(thread, config))
-		return -1;
+	scan_thread_init_sport(thread, thread_id);
+
+	scan_thread_open_sockets(thread, config);
 
 	if (scan_thread_setup_pcap(thread, thread_id, config))
 		return -1;

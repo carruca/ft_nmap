@@ -54,3 +54,13 @@ classify_stealth(uint8_t flags)
 		return PORT_CLOSED;
 	return PORT_OPENFILTERED;
 }
+
+t_port_state
+scan_def_timeout_result(const t_scan_def *def)
+{
+	if (!def)
+		return PORT_FILTERED;
+	if (def->classify == NULL)
+		return PORT_OPENFILTERED;
+	return def->classify(0);
+}

@@ -109,10 +109,7 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 				log_message(LOG_LEVEL_DEBUG, "Timeout waiting for response from %s:%u",
 					probe->dst_ip, probe->dst_port);
 				probe->status = PROBE_TIMEOUT;
-				probe->result = (def && (def->proto == PROTO_UDP
-					|| def->flag & (SCAN_NULL | SCAN_FIN | SCAN_XMAS)))
-					? PORT_OPENFILTERED
-					: PORT_FILTERED;
+				probe->result = scan_def_timeout_result(def);
 				--outstanding;
 				++completed;
 			}

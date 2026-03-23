@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 int log_message(t_log_level level, const char *format, ...)
 {
@@ -29,11 +30,16 @@ int log_message_ctx(t_log_ctx *log_ctx, t_log_level level, const char *format, .
 
 int log_vmessage_ctx(t_log_ctx *log_ctx, t_log_level level, const char *format, va_list args)
 {
+    char *buffer_header;
+    char *buffer;
+
     if (log_ctx == NULL || level < log_ctx->level)
         return 0;
 
-    fprintf(log_ctx->output, "[%s] %s: ", log_level_to_string(level), log_ctx->name);
-    vfprintf(log_ctx->output, format, args);
-    fprintf(log_ctx->output, "\n");
+    asprintf(&buffer_header, "[%s] %s: ", log_level_to_string(level), log_ctx->name);
+    vasprintf(&buffer, format, args);
+    fprintf(log_ctx->output, "%s%s\n", buffer_header, buffer);
+    free(buffer_header);
+    free(buffer);
     return 0;
 }

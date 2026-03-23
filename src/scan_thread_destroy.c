@@ -10,4 +10,5 @@ scan_thread_destroy(t_scan_thread *thread)
 	if (thread->udp_sock > 0)
 		close(thread->udp_sock);
 	free(thread->probes);
+	thread->probes = NULL;
 }

@@ -4,47 +4,37 @@
 static void
 scan_run_sequential(t_scan_ctx *ctx, t_scan_opts *opts)
 {
-	t_scan_thread *thread;
+	t_scan_thread thread;
 	t_list *probes_pending;
 	struct timeval scan_start;
 	struct timeval scan_end;
 	double elapsed;
 
-	thread = calloc(1, sizeof(t_scan_thread));
-	if (thread == NULL)
-	{
-		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: calloc failed");
-		exit(EXIT_FAILURE);
-	}
-
-	thread->dst = ctx->dst;
-	if (scan_thread_init(thread, 0, opts))
+	thread.dst = ctx->dst;
+	if (scan_thread_init(&thread, 0, opts))
 	{
 		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: scan_thread_init failed");
-		free(thread);
 		exit(EXIT_FAILURE);
 	}
 
 	probes_pending = ctx->probes;
-	thread->probes = probe_dequeue(&probes_pending, ctx->probes_total);
-	if (thread->probes == NULL)
+	thread.probes = probe_dequeue(&probes_pending, ctx->probes_total);
+	if (thread.probes == NULL)
 	{
 		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: probe_dequeue failed");
-		scan_thread_destroy(thread);
-		free(thread);
+		scan_thread_destroy(&thread);
 		exit(EXIT_FAILURE);
 	}
 
 	gettimeofday(&scan_start, NULL);
-	scan_thread_run(thread, opts);
+	scan_thread_run(&thread, opts);
 	gettimeofday(&scan_end, NULL);
 
 	elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)
 		+ (double)(scan_end.tv_usec - scan_start.tv_usec) / 1e6;
-	scan_results_print(thread, 1, opts->target, elapsed);
+	scan_results_print(&thread, 1, opts->target, elapsed);
 
-	scan_thread_destroy(thread);
-	free(thread);
+	scan_thread_destroy(&thread);
 }
 
 static void
