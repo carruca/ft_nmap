@@ -61,7 +61,7 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 		FD_ZERO(&fdset);
 		FD_SET(pcap_fd, &fdset);
 		select_timeout.tv_sec = 0;
-		select_timeout.tv_usec = 10000;
+		select_timeout.tv_usec = SELECT_TIMEOUT_US;
 
 		if (select(pcap_fd + 1, &fdset, NULL, NULL, &select_timeout) > 0)
 		{
@@ -71,7 +71,7 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 				for (int i = 0; thread->probes[i] != NULL; ++i)
 				{
 					if (probe_match(thread->probes[i],
-							pkt_header->ts, pkt_data, thread->datalink))
+							pkt_header->ts, pkt_data, pkt_header->caplen, thread->datalink))
 					{
 						--outstanding;
 						++completed;
@@ -81,7 +81,8 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 			}
 		}
 
-		gettimeofday(&now, NULL);
+		if (gettimeofday(&now, NULL) < 0)
+			continue;
 		for (int i = 0; i < total; ++i)
 		{
 			probe = thread->probes[i];

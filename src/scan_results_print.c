@@ -8,6 +8,8 @@ port_state_str(t_port_state state)
 	static const char *strings[] = {
 		"open", "closed", "filtered", "unfiltered", "open|filtered"
 	};
+	if ((int)state < 0 || (size_t)state >= sizeof(strings) / sizeof(*strings))
+		return "unknown";
 	return strings[state];
 }
 

@@ -1,3 +1,6 @@
+#ifndef TCP_CHECKSUM_H
+# define TCP_CHECKSUM_H
+
 #include <stdint.h>
 #include <netinet/tcp.h>
 
@@ -10,3 +13,5 @@ struct pseudo_header
 	uint16_t th_len;
 	struct tcphdr th;
 };
+
+#endif

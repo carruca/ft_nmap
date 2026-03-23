@@ -30,6 +30,7 @@ scan_run_sequential(t_scan_ctx *ctx, t_scan_opts *opts)
 	if (thread->probes == NULL)
 	{
 		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: probe_dequeue failed");
+		scan_thread_destroy(thread);
 		free(thread);
 		exit(EXIT_FAILURE);
 	}

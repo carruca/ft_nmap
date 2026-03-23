@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "logging/log.h"
 
 t_probe *
 probe_new(char *target_ip, uint16_t target_port, double timeout)
@@ -40,14 +41,18 @@ probe_list_create(
 
 			probe = probe_new(target_ip, ports[pos], timeout);
 			if (probe == NULL)
-				continue;
+			{
+				log_message(LOG_LEVEL_FATAL, "probe_new failed");
+				exit(EXIT_FAILURE);
+			}
 			probe->scan_type = def->flag;
 
 			node = ft_lstnew(probe);
 			if (node == NULL)
 			{
 				free(probe);
-				continue;
+				log_message(LOG_LEVEL_FATAL, "ft_lstnew failed");
+				exit(EXIT_FAILURE);
 			}
 			ft_lstadd_back(&probe_list, node);
 		}

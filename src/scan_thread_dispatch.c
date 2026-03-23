@@ -1,6 +1,16 @@
 #include "ft_nmap.h"
 #include "logging/log.h"
 
+static void
+abort_started_threads(t_scan_thread *threads, uint16_t count)
+{
+	for (uint16_t j = 0; j < count; ++j)
+	{
+		pthread_join(threads[j].thread, NULL);
+		scan_thread_destroy(&threads[j]);
+	}
+}
+
 int
 scan_thread_dispatch(
 	t_scan_thread *threads, t_list **pending_list,
@@ -25,6 +35,8 @@ scan_thread_dispatch(
 		if (scan_thread_init(cur, i + 1, config))
 		{
 			log_message(LOG_LEVEL_ERROR, "scan_thread_dispatch: scan_thread_init failed");
+			scan_thread_destroy(cur);
+			abort_started_threads(threads, i);
 			return -1;
 		}
 
@@ -32,12 +44,16 @@ scan_thread_dispatch(
 		if (cur->probes == NULL)
 		{
 			log_message(LOG_LEVEL_ERROR, "scan_thread_dispatch: probe_dequeue failed");
+			scan_thread_destroy(cur);
+			abort_started_threads(threads, i);
 			return -1;
 		}
 
 		if (pthread_create(&cur->thread, NULL, scan_thread_entry, cur) != 0)
 		{
 			log_message(LOG_LEVEL_ERROR, "scan_thread_dispatch: pthread_create failed");
+			scan_thread_destroy(cur);
+			abort_started_threads(threads, i);
 			return -1;
 		}
 	}

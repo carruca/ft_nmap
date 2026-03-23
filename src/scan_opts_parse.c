@@ -46,14 +46,15 @@ scan_cli_options_count(t_scan_cli_option *cli_options)
 struct option *
 scan_cli_options_to_long_options(t_scan_cli_option *cli_options)
 {
-	static struct option *opts;
+	struct option *opts;
 	int count = scan_cli_options_count(cli_options);
 
-	if (opts != NULL)
-		free(opts);
 	opts = calloc(count + 1, sizeof(struct option));
-
-
+	if (opts == NULL)
+	{
+		log_message(LOG_LEVEL_FATAL, "calloc failed");
+		exit(EXIT_FAILURE);
+	}
 	for (int index = 0; index < count; ++index)
 	{
 		opts[index].name = cli_options[index].name;
@@ -92,6 +93,11 @@ scan_cli_option_ports(t_scan_opts *opts, const char *arg)
 		}
 	}
 	opts->portlist = strdup(optarg);
+	if (opts->portlist == NULL)
+	{
+		log_message(LOG_LEVEL_FATAL, "strdup failed");
+		exit(EXIT_FAILURE);
+	}
 }
 
 void
@@ -115,6 +121,11 @@ scan_cli_option_ip(t_scan_opts *opts, const char *arg)
 		exit(EXIT_FAILURE);
 	}
 	opts->targets[0] = strdup(optarg);
+	if (opts->targets[0] == NULL)
+	{
+		log_message(LOG_LEVEL_FATAL, "strdup failed");
+		exit(EXIT_FAILURE);
+	}
 	opts->num_targets = 1;
 }
 
@@ -128,6 +139,11 @@ scan_cli_option_file(t_scan_opts *opts, const char *arg)
 		exit(EXIT_FAILURE);
 	}
 	opts->filename = strdup(optarg);
+	if (opts->filename == NULL)
+	{
+		log_message(LOG_LEVEL_FATAL, "strdup failed");
+		exit(EXIT_FAILURE);
+	}
 }
 
 void
@@ -235,6 +251,7 @@ scan_opts_parse(t_scan_opts *opts, int *out_arg_index, int argc, char **argv)
 			cli_option->validate(opts, optarg);
 	}
 
+	free(long_opts);
 	opts_validate(opts);
 	*out_arg_index = optind;
 }

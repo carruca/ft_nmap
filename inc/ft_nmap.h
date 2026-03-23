@@ -43,6 +43,11 @@
 
 # define MAX_PORTS_PER_SCAN 1024
 
+# define TCP_WINDOW_SIZE    1024
+# define SPORT_MIN          1024
+# define SPORT_RAND_PRIME   7919
+# define SELECT_TIMEOUT_US  10000
+
 typedef enum e_scan_type
 {
     SCAN_UNDEFINED = 0x0000,
@@ -175,7 +180,7 @@ int probe_send(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_
 void probe_mark_sent(t_probe *probe, uint16_t sport);
 int probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport);
 int probe_send_udp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport);
-int probe_match(t_probe *probe, struct timeval ts, const u_char *pkt_data, int datalink);
+int probe_match(t_probe *probe, struct timeval ts, const u_char *pkt_data, uint32_t caplen, int datalink);
 int scan_detect_source(struct sockaddr_in *sockaddr, const struct sockaddr_in *dst);
 int scan_resolve_target(struct sockaddr_in *sockaddr, const char *hostname);
 void scan_config_print(const t_scan_ctx *ctx, const t_scan_opts *opts, int num_ports);

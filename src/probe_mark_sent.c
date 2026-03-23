@@ -2,8 +2,6 @@
 
 #include <errno.h>
 
-extern int errno;
-
 void
 probe_mark_sent(t_probe *probe, uint16_t sport)
 {

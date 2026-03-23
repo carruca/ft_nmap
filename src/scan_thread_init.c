@@ -29,8 +29,8 @@ scan_thread_setup_pcap(t_scan_thread *thread, int thread_id, t_scan_opts *config
 		return -1;
 	}
 
-	srand((unsigned int)time(NULL) ^ ((unsigned int)thread_id * 7919));
-	thread->sport_base = 1024 + (rand() % (65535 - 1024 - MAX_PORTS_PER_SCAN));
+	srand((unsigned int)time(NULL) ^ ((unsigned int)thread_id * (unsigned int)SPORT_RAND_PRIME));
+	thread->sport_base = SPORT_MIN + (rand() % (65535 - SPORT_MIN - MAX_PORTS_PER_SCAN));
 
 	has_tcp = config->scan_flag & (SCAN_SYN | SCAN_ACK | SCAN_FIN | SCAN_XMAS | SCAN_NULL);
 	has_udp = config->scan_flag & SCAN_UDP;

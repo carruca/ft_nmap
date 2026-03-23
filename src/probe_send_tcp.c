@@ -23,7 +23,7 @@ probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_
 	th->th_seq   = htonl(rand());
 	th->th_off   = TCP_HLEN;
 	th->th_flags = def->tcp_flags;
-	th->th_win   = htons(1024);
+	th->th_win   = htons(TCP_WINDOW_SIZE);
 	th->th_sum   = tcp_checksum(&opts->source_addr, &thread->dst, th);
 
 	bytes_sent = sendto(thread->tcp_sock, packet, sizeof(packet), 0,

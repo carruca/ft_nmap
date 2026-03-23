@@ -55,7 +55,14 @@ ip_file_parse(t_scan_opts *opts, const char *filename)
 			}
 		}
 		log_message(LOG_LEVEL_DEBUG, "target added: %s", line);
-		targets[count++] = strdup(line);
+		targets[count] = strdup(line);
+		if (targets[count] == NULL)
+		{
+			fclose(stream);
+			log_message(LOG_LEVEL_FATAL, "strdup failed");
+			exit(EXIT_FAILURE);
+		}
+		count++;
 	}
 	fclose(stream);
 

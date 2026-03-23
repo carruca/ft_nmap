@@ -2,8 +2,6 @@
 
 #include <errno.h>
 
-extern int errno;
-
 int
 get_raw_socket_by_protocol(const char *protocol_name)
 {

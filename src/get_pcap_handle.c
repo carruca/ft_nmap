@@ -7,9 +7,8 @@ pcap_find_iface_for_target(const char *target, pcap_if_t *alldevs)
 	struct sockaddr_in target_addr;
 	pcap_if_t *dev;
 
-	inet_pton(AF_INET, target, &target_addr.sin_addr);
-
-	if ((ntohl(target_addr.sin_addr.s_addr) >> 24) == 127)
+	if (inet_pton(AF_INET, target, &target_addr.sin_addr) == 1
+		&& (ntohl(target_addr.sin_addr.s_addr) >> 24) == 127)
 	{
 		for (dev = alldevs; dev != NULL; dev = dev->next)
 			if (strcmp(dev->name, "lo") == 0)
