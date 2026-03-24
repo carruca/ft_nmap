@@ -9,4 +9,8 @@ services:
     stdin_open: true             # Mantener STDIN abierto
     tty: true                    # Asignar un pseudo-TTY
     working_dir: /workspace
+    network_mode: host           # Acceso a la red del host para pcap y raw sockets
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
 

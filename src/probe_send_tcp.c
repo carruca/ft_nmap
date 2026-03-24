@@ -2,7 +2,11 @@
 #include "tcp_checksum.h"
 #include "logging/log.h"
 
-#include <sys/random.h>
+#ifdef __GLIBC__
+# include <sys/random.h>
+#else
+# include <unistd.h>
+#endif
 
 
 int
