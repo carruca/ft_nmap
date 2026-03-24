@@ -45,7 +45,6 @@
 
 # define TCP_WINDOW_SIZE    1024
 # define SPORT_MIN          1024
-# define SPORT_RAND_PRIME   7919
 # define SELECT_TIMEOUT_US  10000
 
 typedef enum e_scan_type
@@ -157,6 +156,7 @@ struct s_scan_thread
   char filter_expr[FILTER_STRLEN];
 
   int sport_base;
+  int sport_range;
 
   t_probe **probes;
 
@@ -189,7 +189,6 @@ unsigned short tcp_checksum(const struct sockaddr_in *src_sockaddr, const struct
 unsigned short checksum(char *buffer, size_t bufsize);
 unsigned short *get_ports(char *expr, unsigned short *number_of_ports);
 
-void error(int status, int errnum, const char *format, ...);
 int  fqdn_is_valid(const char *str);
 const t_scan_def *scan_def_by_flag(t_scan_type flag);
 const t_scan_def *scan_def_by_index(int index);

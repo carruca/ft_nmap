@@ -149,11 +149,11 @@ scan_cli_option_file(t_scan_opts *opts, const char *arg)
 void
 scan_cli_option_speedup(t_scan_opts *opts, const char *arg)
 {
-	int n;
+	char *endptr;
+	long n;
 
-	(void)arg;
-	n = atoi(optarg);
-	if (n < 0 || n > MAXTHREADS)
+	n = strtol(arg, &endptr, 10);
+	if (*endptr != '\0' || endptr == arg || n < 0 || n > MAXTHREADS)
 	{
 		log_message(LOG_LEVEL_FATAL, "speedup must be between 0 and %d.", MAXTHREADS);
 		exit(EXIT_FAILURE);

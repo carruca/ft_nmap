@@ -19,10 +19,12 @@ scan_thread_dispatch(
 	uint16_t probes_per_thread;
 	uint16_t remaining_probes;
 	uint16_t probes_assigned_to_thread;
+	int sport_range;
 	t_scan_thread *cur;
 
 	probes_per_thread = ctx->probes_total / config->num_threads;
 	remaining_probes = ctx->probes_total % config->num_threads;
+	sport_range = (65535 - SPORT_MIN) / config->num_threads;
 
 	for (uint16_t i = 0; i < config->num_threads; ++i)
 	{
@@ -31,6 +33,8 @@ scan_thread_dispatch(
 
 		cur = &threads[i];
 		cur->dst = ctx->dst;
+		cur->sport_base = SPORT_MIN + i * sport_range;
+		cur->sport_range = sport_range;
 
 		if (scan_thread_init(cur, i + 1, config))
 		{

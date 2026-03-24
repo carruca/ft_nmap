@@ -11,6 +11,8 @@ scan_run_sequential(t_scan_ctx *ctx, t_scan_opts *opts)
 	double elapsed;
 
 	thread.dst = ctx->dst;
+	thread.sport_base = SPORT_MIN;
+	thread.sport_range = 65535 - SPORT_MIN;
 	if (scan_thread_init(&thread, 0, opts))
 	{
 		log_message(LOG_LEVEL_ERROR, "scan_run_sequential: scan_thread_init failed");
@@ -55,7 +57,12 @@ scan_run_parallel(t_scan_ctx *ctx, t_scan_opts *opts)
 
 	probes_pending = ctx->probes;
 	gettimeofday(&scan_start, NULL);
-	scan_thread_dispatch(threads, &probes_pending, ctx, opts);
+	if (scan_thread_dispatch(threads, &probes_pending, ctx, opts))
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_run_parallel: scan_thread_dispatch failed");
+		free(threads);
+		exit(EXIT_FAILURE);
+	}
 	gettimeofday(&scan_end, NULL);
 
 	elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)

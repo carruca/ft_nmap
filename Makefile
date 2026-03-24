@@ -6,8 +6,7 @@ OBJSPATH	= obj/
 
 SRCSFILES	= \
 					checksum.c \
-					error.c \
-					fqdn.c \
+						fqdn.c \
 					ft_nmap.c \
 					get_pcap_handle.c \
 					get_ports.c \

@@ -42,7 +42,7 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 		{
 			probe = thread->probes[next_to_send];
 			sport = (uint16_t)(thread->sport_base
-				+ (next_to_send % MAX_PORTS_PER_SCAN));
+				+ (next_to_send % thread->sport_range));
 
 			if (probe->status == PROBE_PENDING)
 			{
@@ -97,7 +97,7 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 			if (probe->retries < MAX_RETRIES)
 			{
 				sport = (uint16_t)(thread->sport_base
-					+ (i % MAX_PORTS_PER_SCAN));
+					+ (i % thread->sport_range));
 				++probe->retries;
 				log_message(LOG_LEVEL_DEBUG, "Retrying probe to %s:%u (%d/%d)",
 					probe->dst_ip, probe->dst_port, probe->retries, MAX_RETRIES);
