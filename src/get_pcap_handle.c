@@ -33,7 +33,7 @@ get_pcap_handle(t_scan_opts *opts, int *datalink)
 	if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR)
 	{
 		fprintf(stderr, "Couldn't find any device: %s\n", errbuf);
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
 	dev = pcap_find_iface_for_target(opts->target, alldevs);
@@ -42,44 +42,57 @@ get_pcap_handle(t_scan_opts *opts, int *datalink)
 	if (pcap_handle == NULL)
 	{
 		fprintf(stderr, "Couldn't open device %s: %s\n", dev->name, errbuf);
-		exit(EXIT_FAILURE);
+		pcap_freealldevs(alldevs);
+		return NULL;
 	}
 
 	if (pcap_set_buffer_size(pcap_handle, PCAP_BUFSIZ) != 0)
 	{
 		fprintf(stderr, "Couldn't set buffer size: %s\n", pcap_geterr(pcap_handle));
-		exit(EXIT_FAILURE);
+		pcap_close(pcap_handle);
+		pcap_freealldevs(alldevs);
+		return NULL;
 	}
 
 	if (pcap_set_promisc(pcap_handle, PROMISC_TRUE) != 0)
 	{
 		fprintf(stderr, "Couldn't set promiscuous mode: %s\n", pcap_geterr(pcap_handle));
-		exit(EXIT_FAILURE);
+		pcap_close(pcap_handle);
+		pcap_freealldevs(alldevs);
+		return NULL;
 	}
 
 	if (pcap_set_timeout(pcap_handle, 10) != 0)
 	{
 		fprintf(stderr, "Couldn't set packet buffer timeout: %s\n", pcap_geterr(pcap_handle));
-		exit(EXIT_FAILURE);
+		pcap_close(pcap_handle);
+		pcap_freealldevs(alldevs);
+		return NULL;
 	}
 
 	if (pcap_setnonblock(pcap_handle, 1, errbuf) == PCAP_ERROR)
 	{
 		fprintf(stderr, "Couldn't set non-blocking mode: %s\n", errbuf);
-		exit(EXIT_FAILURE);
+		pcap_close(pcap_handle);
+		pcap_freealldevs(alldevs);
+		return NULL;
 	}
 
 	if (pcap_activate(pcap_handle) != 0)
 	{
 		fprintf(stderr, "Couldn't activate handle: %s\n", pcap_geterr(pcap_handle));
-		exit(EXIT_FAILURE);
+		pcap_close(pcap_handle);
+		pcap_freealldevs(alldevs);
+		return NULL;
 	}
 
 	*datalink = pcap_datalink(pcap_handle);
 	if (*datalink != DLT_EN10MB && *datalink != DLT_NULL && *datalink != DLT_LOOP)
 	{
 		fprintf(stderr, "Unsupported datalink type: %d\n", *datalink);
-		exit(EXIT_FAILURE);
+		pcap_close(pcap_handle);
+		pcap_freealldevs(alldevs);
+		return NULL;
 	}
 
 	log_message(LOG_LEVEL_DEBUG, "Capture ready on interface %s", dev->name);

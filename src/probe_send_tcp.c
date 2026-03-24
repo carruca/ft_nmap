@@ -2,6 +2,8 @@
 #include "tcp_checksum.h"
 #include "logging/log.h"
 
+#include <sys/random.h>
+
 
 int
 probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_t sport)
@@ -20,7 +22,10 @@ probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_
 
 	th->th_sport = htons(sport);
 	th->th_dport = htons(probe->dst_port);
-	th->th_seq   = htonl(rand());
+	uint32_t isn;
+	if (getrandom(&isn, sizeof(isn), 0) != sizeof(isn))
+		isn = (uint32_t)(uintptr_t)probe;
+	th->th_seq   = htonl(isn);
 	th->th_off   = TCP_HLEN;
 	th->th_flags = def->tcp_flags;
 	th->th_win   = htons(TCP_WINDOW_SIZE);
@@ -28,7 +33,7 @@ probe_send_tcp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_
 
 	bytes_sent = sendto(thread->tcp_sock, packet, sizeof(packet), 0,
 		(struct sockaddr *)&thread->dst, sizeof(struct sockaddr_in));
-	if (bytes_sent > 0)
+	if (bytes_sent == (ssize_t)sizeof(packet))
 	{
 		probe_mark_sent(probe, sport);
 		log_message(LOG_LEVEL_DEBUG, "Sending %s to %s:%u (sport: %u)",

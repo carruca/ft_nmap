@@ -76,7 +76,9 @@ scan_results_print(t_scan_thread *threads, int num_threads,
 {
 	int has_open = 0;
 	int has_other = 0;
-	char *resolved_ip = inet_ntoa(threads[0].dst.sin_addr);
+	char resolved_ip[INET_ADDRSTRLEN];
+	if (inet_ntop(AF_INET, &threads[0].dst.sin_addr, resolved_ip, sizeof(resolved_ip)) == NULL)
+		resolved_ip[0] = '\0';
 
 	printf("Scan took %.2f sec\n", scan_duration);
 	if (strcmp(target, resolved_ip) == 0)

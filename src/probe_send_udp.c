@@ -17,7 +17,7 @@ probe_send_udp(t_scan_thread *thread, t_probe *probe, t_scan_opts *opts, uint16_
 
 	bytes_sent = sendto(thread->udp_sock, &uh, sizeof(uh), 0,
 		(struct sockaddr *)&thread->dst, sizeof(struct sockaddr_in));
-	if (bytes_sent > 0)
+	if (bytes_sent == (ssize_t)sizeof(uh))
 	{
 		probe_mark_sent(probe, sport);
 		log_message(LOG_LEVEL_DEBUG, "Sending UDP to %s:%u (sport: %u)",

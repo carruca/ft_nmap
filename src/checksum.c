@@ -8,6 +8,8 @@ checksum(char *buffer, size_t bufsize)
 
 	for (wp = (unsigned short *)buffer; bufsize > 1; wp++, bufsize -= 2)
 		sum += *wp;
+	if (bufsize == 1)
+		sum += *(unsigned char *)wp;
 	sum = (sum >> 16) + (sum & 0xffff);
 	sum += (sum >> 16);
 	return ~sum;

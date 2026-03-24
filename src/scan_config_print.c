@@ -13,7 +13,10 @@ scan_config_print(const t_scan_ctx *ctx, const t_scan_opts *opts, int num_ports)
 	}
 
 	printf("Scan configurations\n");
-	printf("Target IP-Address : %s\n", inet_ntoa(ctx->dst.sin_addr));
+	char ip_str[INET_ADDRSTRLEN];
+	if (inet_ntop(AF_INET, &ctx->dst.sin_addr, ip_str, sizeof(ip_str)) == NULL)
+		ip_str[0] = '\0';
+	printf("Target IP-Address : %s\n", ip_str);
 	printf("No of ports to scan : %d\n", num_ports);
 	printf("Scans to be performed :");
 	for (int pos = 0; (def = scan_def_by_index(pos))->name != NULL; ++pos)

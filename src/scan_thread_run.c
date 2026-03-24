@@ -32,6 +32,11 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 
 	total = count_probes(thread->probes);
 	pcap_fd = pcap_get_selectable_fd(thread->pcap_handle);
+	if (pcap_fd < 0)
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_thread_run: pcap_get_selectable_fd failed");
+		return -1;
+	}
 	next_to_send = 0;
 	outstanding = 0;
 	completed = 0;
@@ -48,6 +53,8 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 			{
 				if (probe_send(thread, probe, opts, sport) == 0)
 					++outstanding;
+				else if (probe->retries < MAX_RETRIES)
+					++probe->retries;
 				else
 				{
 					probe->status = PROBE_TIMEOUT;
@@ -101,7 +108,8 @@ scan_thread_run(t_scan_thread *thread, t_scan_opts *opts)
 				++probe->retries;
 				log_message(LOG_LEVEL_DEBUG, "Retrying probe to %s:%u (%d/%d)",
 					probe->dst_ip, probe->dst_port, probe->retries, MAX_RETRIES);
-				probe_send(thread, probe, opts, sport);
+				if (probe_send(thread, probe, opts, sport) != 0)
+					probe->status = PROBE_PENDING;
 			}
 			else
 			{

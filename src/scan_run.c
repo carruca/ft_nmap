@@ -4,7 +4,7 @@
 static void
 scan_run_sequential(t_scan_ctx *ctx, t_scan_opts *opts)
 {
-	t_scan_thread thread;
+	t_scan_thread thread = {0};
 	t_list *probes_pending;
 	struct timeval scan_start;
 	struct timeval scan_end;
@@ -28,9 +28,11 @@ scan_run_sequential(t_scan_ctx *ctx, t_scan_opts *opts)
 		exit(EXIT_FAILURE);
 	}
 
-	gettimeofday(&scan_start, NULL);
+	if (gettimeofday(&scan_start, NULL) < 0)
+		scan_start = (struct timeval){0};
 	scan_thread_run(&thread, opts);
-	gettimeofday(&scan_end, NULL);
+	if (gettimeofday(&scan_end, NULL) < 0)
+		scan_end = scan_start;
 
 	elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)
 		+ (double)(scan_end.tv_usec - scan_start.tv_usec) / 1e6;
@@ -56,14 +58,16 @@ scan_run_parallel(t_scan_ctx *ctx, t_scan_opts *opts)
 	}
 
 	probes_pending = ctx->probes;
-	gettimeofday(&scan_start, NULL);
+	if (gettimeofday(&scan_start, NULL) < 0)
+		scan_start = (struct timeval){0};
 	if (scan_thread_dispatch(threads, &probes_pending, ctx, opts))
 	{
 		log_message(LOG_LEVEL_ERROR, "scan_run_parallel: scan_thread_dispatch failed");
 		free(threads);
 		exit(EXIT_FAILURE);
 	}
-	gettimeofday(&scan_end, NULL);
+	if (gettimeofday(&scan_end, NULL) < 0)
+		scan_end = scan_start;
 
 	elapsed = (double)(scan_end.tv_sec - scan_start.tv_sec)
 		+ (double)(scan_end.tv_usec - scan_start.tv_usec) / 1e6;

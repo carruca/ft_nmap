@@ -16,6 +16,13 @@ main(int argc, char **argv)
 	ctx = scan_create();
 	scan_opts_parse(&opts, &arg_index, argc, argv);
 	ctx->ports = get_ports((opts.portlist) ? opts.portlist : DEFAULT_PORT_RANGE, &ctx->num_ports);
+	if (ctx->ports == NULL)
+	{
+		log_message(LOG_LEVEL_FATAL, "ft_nmap: failed to parse port list");
+		scan_opts_destroy(&opts);
+		scan_destroy(ctx);
+		return 1;
+	}
 
 	switch (opts.verbose)
 	{

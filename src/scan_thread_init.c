@@ -31,7 +31,7 @@ scan_thread_setup_pcap(t_scan_thread *thread, int thread_id, t_scan_opts *config
 {
 	int has_tcp;
 	int has_udp;
-	const char *src_ip;
+	char src_ip[INET_ADDRSTRLEN];
 	int lo;
 	int hi;
 
@@ -44,7 +44,11 @@ scan_thread_setup_pcap(t_scan_thread *thread, int thread_id, t_scan_opts *config
 
 	has_tcp = config->scan_flag & (SCAN_SYN | SCAN_ACK | SCAN_FIN | SCAN_XMAS | SCAN_NULL);
 	has_udp = config->scan_flag & SCAN_UDP;
-	src_ip = inet_ntoa(thread->dst.sin_addr);
+	if (inet_ntop(AF_INET, &thread->dst.sin_addr, src_ip, sizeof(src_ip)) == NULL)
+	{
+		log_message(LOG_LEVEL_ERROR, "scan_thread_setup_pcap: inet_ntop failed");
+		return -1;
+	}
 	lo = thread->sport_base;
 	hi = thread->sport_base + thread->sport_range - 1;
 
@@ -76,6 +80,8 @@ scan_thread_init(t_scan_thread *thread, int thread_id, t_scan_opts *config)
 {
 	thread->thread_id = thread_id;
 	thread->opts = config;
+	thread->tcp_sock = -1;
+	thread->udp_sock = -1;
 
 	if (scan_thread_open_sockets(thread, config))
 		return -1;
