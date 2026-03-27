@@ -10,7 +10,7 @@ main(int argc, char **argv)
 	t_scan_ctx *ctx;
 	t_scan_opts opts;
 
-	log_level_set(LOG_LEVEL_FATAL);
+	log_level_set(LOG_LEVEL_ERROR);
 	log_name_set(basename(argv[0]));
 
 	ctx = scan_create();
@@ -26,7 +26,7 @@ main(int argc, char **argv)
 
 	switch (opts.verbose)
 	{
-		case 0:  log_level_set(LOG_LEVEL_NONE);  break;
+		case 0:  log_level_set(LOG_LEVEL_ERROR); break;
 		case 1:  log_level_set(LOG_LEVEL_INFO);  break;
 		default: log_level_set(LOG_LEVEL_DEBUG); break;
 	}
